@@ -1,0 +1,9 @@
+[package]
+name = "reason-vad"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ort = { version = "=2.0.0-rc.11", default-features = false, features = ["std", "ndarray", "load-dynamic"] }
+ndarray = "0.17.2"
+thiserror = "1.0.50"

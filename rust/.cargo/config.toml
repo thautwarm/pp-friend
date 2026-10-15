@@ -1,0 +1,10 @@
+# ort 现在走 load-dynamic：构建期**不**链接 ONNX Runtime，运行时才 dlopen。
+# 所以跑宿主上的 cargo test 得有个 dylib 可加载，路径由这里给。
+#
+# 文件由 tools/fetch_onnxruntime.sh host 放到 rust/.ort/。
+# relative = true 是相对于本文件所在的目录（rust/）。
+#
+# 注意：这个环境变量只在通过 cargo 跑二进制时生效；打进 Android 的产物不读它，
+# 那边走 dlopen("libonnxruntime.so")，由系统的库搜索路径命中 jniLibs 里那份。
+[env]
+ORT_DYLIB_PATH = { value = ".ort/libonnxruntime.dylib", relative = true }

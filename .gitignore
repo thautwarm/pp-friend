@@ -1,0 +1,62 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be included in version control, so this line
+# is commented out by default.
+#.vscode/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+/coverage/
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio will place build artifacts here
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# Widget Preview related
+.widget_preview/
+
+# Rust
+/rust/target/
+# 注意：android/app/src/main/jniLibs/ 是**入库**的，里面两个 .so：
+#   librust_lib_pp_friend.so  tools/build_rust_android.sh 编出来的
+#                             （Silero 模型 include_bytes 在里面）
+#   libonnxruntime.so         官方的 ORT 运行时，tools/fetch_onnxruntime.sh 下载
+# 入库的理由：新 clone 不需要 NDK + Rust 工具链就能构建出能跑的 APK。
+# 改了 Rust 源码才需要重跑那个脚本，然后**把 .so 一起提交**。
+
+# 宿主测试用的 ONNX Runtime dylib（35MB，只给 `cargo test` 用，不进 Android 包）。
+# 由 tools/fetch_onnxruntime.sh host 按需下载。Android 那份 .so 是入库的，
+# 在 android/app/src/main/jniLibs/ 下。
+/rust/.ort/

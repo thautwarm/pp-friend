@@ -1,0 +1,28 @@
+[package]
+name = "rust_lib_pp_friend"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "staticlib"]
+
+[workspace]
+members = ["vendor/reason-vad"]
+
+[dependencies]
+flutter_rust_bridge = "=2.13.0"
+reason-vad = { path = "vendor/reason-vad" }
+
+[lints.rust]
+# frb 的宏会生成 #[cfg(frb_expand)]（供 --expand 模式用），这个 cfg 名不在
+# rustc 的已知列表里，声明一下免得每次构建都刷一堆 warning。
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(frb_expand)"] }
+
+[profile.release]
+# 二进制里大头是静态链进来的 ONNX Runtime，这几项主要是压 Rust 自己那部分。
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+strip = "symbols"
+# 注意：**不要**设 panic = "abort" —— frb 依赖 unwinding 把 Rust panic 转成 Dart 异常。

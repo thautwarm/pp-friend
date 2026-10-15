@@ -1,0 +1,18 @@
+gradle-wrapper.jar
+/.gradle
+/captures/
+/gradlew
+/gradlew.bat
+/local.properties
+# AGP 会在根工程和 app 子工程下各写一个 build/。
+# 根 .gitignore 里的 `/build/` 只锚在仓库根，管不到这里。
+/build/
+/app/build/
+GeneratedPluginRegistrant.java
+.cxx/
+
+# Remember to never publicly share your keystore.
+# See https://flutter.dev/to/reference-keystore
+key.properties
+**/*.keystore
+**/*.jks

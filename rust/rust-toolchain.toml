@@ -1,0 +1,10 @@
+[toolchain]
+# 钉死版本，不要用浮动的 stable —— 这个 crate 的产物要进 Android APK，
+# 工具链漂移会让构建结果不可复现。
+channel = "1.94.1"
+components = ["rustfmt", "clippy"]
+targets = [
+    "aarch64-linux-android",
+    "x86_64-linux-android",
+    "aarch64-apple-darwin",
+]
