@@ -40,6 +40,8 @@ dependencies:
   msgpack_dart: ^1.0.1
   # 版本必须和 flutter_rust_bridge_codegen 一致（见 rust/Cargo.toml）
   flutter_rust_bridge: 2.13.0
+  path_provider: ^2.1.6
+  image_picker: ^1.2.4
 
 dev_dependencies:
   flutter_test:
