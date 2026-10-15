@@ -47,6 +47,16 @@ app.*.map.json
 # Widget Preview related
 .widget_preview/
 
+# 签名与密钥 —— 这个仓库是要开源的，下面这些一律不许入库。
+# 正式签名的 keystore 泄露 = 别人能签发冒充你的包，收不回来。
+# 现状：release 借用 ~/.android/debug.keystore（在仓库外，通用密钥，不是秘密），
+# 所以现在仓库里没有任何密钥。等你真去配正式签名时，这几行就是那道闸。
+*.jks
+*.keystore
+/android/key.properties
+.env
+.env.*
+
 # Rust
 /rust/target/
 # 注意：android/app/src/main/jniLibs/ 是**入库**的，里面两个 .so：
