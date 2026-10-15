@@ -3,6 +3,8 @@ package com.ppfriend.pp_friend.voice
 import android.annotation.SuppressLint
 import android.content.Context
 import android.media.AudioAttributes
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioRecord
@@ -51,6 +53,20 @@ class NativeVoiceEngine private constructor(private val appContext: Context) {
         private const val TELEMETRY_INTERVAL_MS = 33L
 
         private const val SILENCE_DB = -120.0
+
+        /**
+         * 算作"耳机"的输出设备。蓝牙只收 SCO / BLE —— A2DP 是音乐通道，
+         * 通话类音频不会走它，把它当耳机反而会让选路落空。
+         *
+         * 这些都是编译期常量，所以在 API 29 上引用 TYPE_BLE_HEADSET 也不会炸。
+         */
+        private val HEADSET_OUTPUT_TYPES = intArrayOf(
+            AudioDeviceInfo.TYPE_WIRED_HEADSET,
+            AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+            AudioDeviceInfo.TYPE_USB_HEADSET,
+            AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+            AudioDeviceInfo.TYPE_BLE_HEADSET,
+        )
     }
 
     // ---------------------------------------------------------------- 对外回调
@@ -136,11 +152,8 @@ class NativeVoiceEngine private constructor(private val appContext: Context) {
         profile = newProfile
         // 这两个可以热切，方便边跑边对比。
         if (audioRunning) {
-            runCatching {
-                audioManager.mode = profile.audioManagerModeValue
-                @Suppress("DEPRECATION")
-                audioManager.isSpeakerphoneOn = profile.speakerphone
-            }
+            runCatching { audioManager.mode = profile.audioManagerModeValue }
+            applyRouting()
         }
     }
 
@@ -177,12 +190,81 @@ class NativeVoiceEngine private constructor(private val appContext: Context) {
         return System.currentTimeMillis() - lastPlaybackWriteMs < 200
     }
 
+    // ---------------------------------------------------------------- 音频路由
+
+    /**
+     * 耳机插拔时重新选路。
+     *
+     * 用户会在对话中途插上耳机（或蓝牙耳机刚连上）—— 不重选的话，声音还留在
+     * 上一次选的那条路上，得结束对话再开一次才能换过来。
+     */
+    private val audioDeviceCallback = object : AudioDeviceCallback() {
+        override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>?) {
+            if (audioRunning) applyRouting()
+        }
+
+        override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>?) {
+            if (audioRunning) applyRouting()
+        }
+    }
+
+    /**
+     * 决定声音往哪儿走。**有耳机就走耳机，没耳机才轮到外放。**
+     *
+     * 以前这里是无条件 `isSpeakerphoneOn = profile.speakerphone`（默认 true），
+     * 那是给 AEC 实测基线把外放钉死用的 —— 后果是不管插不插耳机，声音一律从
+     * 扬声器出来，耳机白插。
+     *
+     * `profile.speakerphone` 的语义因此收窄成"**没有耳机时**要不要外放"：
+     * 开着 = 扬声器，关掉 = 听筒。
+     *
+     * Android 12(31) 起用 `setCommunicationDevice` 显式挑设备，比
+     * `isSpeakerphoneOn` 这种开关式 API 准 —— 后者在蓝牙上要配合 startBluetoothSco
+     * 才肯走，而前者由系统负责把 SCO 拉起来。29/30 没有这个 API，退回旧开关，
+     * 但同样只在没有耳机时才打开外放。
+     */
+    private fun applyRouting() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            applyRoutingModern()
+        } else {
+            @Suppress("DEPRECATION")
+            runCatching {
+                audioManager.isSpeakerphoneOn = profile.speakerphone && !hasOutputHeadset()
+            }
+        }
+    }
+
+    private fun applyRoutingModern() {
+        val available = runCatching { audioManager.availableCommunicationDevices }
+            .getOrDefault(emptyList())
+        if (available.isEmpty()) return
+        fun firstOf(vararg types: Int) = available.firstOrNull { it.type in types }
+
+        // 耳机优先，顺序 = 插线的比无线的优先（同时接着时，用户手上那根更明确）
+        val target = firstOf(*HEADSET_OUTPUT_TYPES)
+            ?: firstOf(
+                if (profile.speakerphone) {
+                    AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+                } else {
+                    AudioDeviceInfo.TYPE_BUILTIN_EARPIECE
+                },
+            )
+            ?: return
+        runCatching { audioManager.setCommunicationDevice(target) }
+    }
+
+    /** 当前有没有插着"出声的耳机"。外放和听筒本身不算。 */
+    private fun hasOutputHeadset(): Boolean {
+        val outputs = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+        return outputs.any { it.type in HEADSET_OUTPUT_TYPES }
+    }
+
     // ---------------------------------------------------------------- 音频会话
 
     /**
      * 打开音频链路。幂等：已经在跑就直接返回当前格式。
      *
-     * 顺序很关键：先 setMode / speakerphone，再建 AudioRecord，
+     * 顺序很关键：先 setMode 并选好输出设备，再建 AudioRecord，
      * 否则音频路由与 AEC 滤波器会建立在错误的路径上。
      */
     fun startAudio(preferredSampleRate: Int): Result<Map<String, Any>> = runCatching {
@@ -197,8 +279,8 @@ class NativeVoiceEngine private constructor(private val appContext: Context) {
         savedSpeakerphone = audioManager.isSpeakerphoneOn
 
         audioManager.mode = profile.audioManagerModeValue
-        @Suppress("DEPRECATION")
-        audioManager.isSpeakerphoneOn = profile.speakerphone
+        audioManager.registerAudioDeviceCallback(audioDeviceCallback, mainHandler)
+        applyRouting()
 
         requestAudioFocus()
 
@@ -232,6 +314,12 @@ class NativeVoiceEngine private constructor(private val appContext: Context) {
         manualAec = null
 
         abandonAudioFocus()
+
+        runCatching { audioManager.unregisterAudioDeviceCallback(audioDeviceCallback) }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            // 不清掉的话，选中的设备会一直粘着这个 App，别的应用跟着一起改道。
+            runCatching { audioManager.clearCommunicationDevice() }
+        }
 
         runCatching { audioManager.mode = savedAudioMode }
         runCatching {
