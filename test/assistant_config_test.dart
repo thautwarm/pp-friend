@@ -8,11 +8,17 @@ void main() {
   group('AssistantConfig 序列化', () {
     test('新字段全部往返', () {
       const config = AssistantConfig(
-        brain: BrainConfig(
-          baseUrl: 'http://192.168.0.9:8000',
-          brainId: '员工3',
-          token: 'secret',
-        ),
+        profiles: [
+          Profile(
+            id: AssistantConfig.defaultProfileId,
+            name: '员工3',
+            brain: BrainConfig(
+              baseUrl: 'http://192.168.0.9:8000',
+              brainId: '员工3',
+              token: 'secret',
+            ),
+          ),
+        ],
         vadThreshold: 0.42,
         vadMinSilenceMs: 900,
         vadSpeechPadMs: 260,
@@ -87,7 +93,12 @@ void main() {
 
     test('copyWith 只改指定的字段', () {
       const config = AssistantConfig(
-        brain: BrainConfig(baseUrl: 'u', brainId: 'b'),
+        profiles: [
+          Profile(
+            id: AssistantConfig.defaultProfileId,
+            brain: BrainConfig(baseUrl: 'u', brainId: 'b'),
+          ),
+        ],
         vadMinSilenceMs: 800,
       );
       final updated = config.copyWith(vadThreshold: 0.7);

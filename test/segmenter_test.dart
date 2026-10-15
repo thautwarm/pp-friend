@@ -11,6 +11,7 @@ import 'package:pp_friend/src/config/assistant_config.dart';
 import 'package:pp_friend/src/conversation/conversation_controller.dart';
 import 'package:pp_friend/src/voice/voice_engine.dart';
 
+import 'support/config_fakes.dart';
 import 'support/voice_fakes.dart';
 
 void main() {
@@ -150,8 +151,8 @@ Future<ConversationController> _start(
     segmenterFactory: factory,
   );
   await controller.updateConfig(
-    const AssistantConfig(
-      brain: BrainConfig(baseUrl: 'http://test.local:8000', brainId: '测试'),
+    configWithBrain(
+      const BrainConfig(baseUrl: 'http://test.local:8000', brainId: '测试'),
     ),
   );
   await controller.start();
