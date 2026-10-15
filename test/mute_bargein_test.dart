@@ -13,6 +13,7 @@ import 'package:pp_friend/src/config/assistant_config.dart';
 import 'package:pp_friend/src/conversation/conversation_controller.dart';
 import 'package:pp_friend/src/conversation/message.dart';
 
+import 'support/config_fakes.dart';
 import 'support/voice_fakes.dart';
 
 /// 48kHz 下 20ms 一帧 = 1920 字节。闭麦时长就靠帧数堆出来。
@@ -464,8 +465,8 @@ Future<_Harness> _start(
     },
   );
   await controller.updateConfig(
-    AssistantConfig(
-      brain: const BrainConfig(baseUrl: 'http://test.local:8000', brainId: '测试'),
+    configWithBrain(
+      const BrainConfig(baseUrl: 'http://test.local:8000', brainId: '测试'),
       bargeIn: bargeIn,
     ),
   );
@@ -528,8 +529,8 @@ Future<_Harness> _startPlayingReply(
     },
   );
   await controller.updateConfig(
-    AssistantConfig(
-      brain: const BrainConfig(baseUrl: 'http://test.local:8000', brainId: '测试'),
+    configWithBrain(
+      const BrainConfig(baseUrl: 'http://test.local:8000', brainId: '测试'),
       bargeIn: bargeIn,
     ),
   );

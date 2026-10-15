@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
@@ -9,8 +10,14 @@ import '../audio/test_tone.dart';
 import '../brain/brain_client.dart';
 import '../config/assistant_config.dart';
 import '../config/config_store.dart';
+import '../storage/app_dirs.dart';
+import '../storage/avatar_store.dart';
+import '../storage/file_message_store.dart';
+import '../storage/memory_message_store.dart';
+import '../storage/message_store.dart';
 import '../voice/voice_engine.dart';
 import 'message.dart';
+import 'profile_runtime.dart';
 import 'utterance_queue.dart';
 
 /// 已经收到、还没轮到播的一条回复。
@@ -72,10 +79,18 @@ class ConversationController extends ChangeNotifier {
     VoiceEngine? engine,
     ConfigStore? store,
     BrainClient? brain,
+    BrainClient Function()? brainFactory,
+    MessageStore? history,
+    AppDirResolver? appDir,
+    AvatarStore? avatars,
     SegmenterFactory? segmenterFactory,
   })  : _engine = engine ?? VoiceEngine.instance,
         _store = store ?? ConfigStore(),
-        _brain = brain ?? BrainClient(),
+        _brainFactory =
+            brainFactory ?? (brain == null ? BrainClient.new : () => brain),
+        _injectedHistory = history,
+        _injectedAvatars = avatars,
+        _appDirResolver = appDir ?? resolveAppDir,
         _segmenterFactory = segmenterFactory ?? _defaultSegmenterFactory;
 
   static Future<Segmenter> _defaultSegmenterFactory({
@@ -86,17 +101,70 @@ class ConversationController extends ChangeNotifier {
 
   final VoiceEngine _engine;
   final ConfigStore _store;
-  final BrainClient _brain;
+
+  /// 造一个 brain 客户端。**每个档案要各自的实例**。
+  ///
+  /// 传了 `brain:` 的话工厂永远返回同一个实例，只适合单档案的场景
+  /// （现有的测试就是这么用的）。多档案共用一个是错的：
+  /// [BrainClient.abort] 会把底层 client 关掉重开，那会把别的档案
+  /// 在途的长轮询一起打断。
+  final BrainClient Function() _brainFactory;
+
+  /// 测试注入的历史存储。不注入就按应用目录造一个真的。
+  final MessageStore? _injectedHistory;
+
+  /// 测试注入的头像存储。
+  ///
+  /// 有它是因为**头像全是文件操作**，而 `testWidgets` 会把测试体跑在一个
+  /// 假的时钟里，真实的磁盘 IO 在那里永远不会完成 —— 界面测试一旦碰到
+  /// 真的 `File`，整个测试就挂住，而不是报错。和 [MessageStore] 配
+  /// `MemoryMessageStore` 是同一个道理。
+  final AvatarStore? _injectedAvatars;
+  final AppDirResolver _appDirResolver;
   final SegmenterFactory _segmenterFactory;
 
-  static const int messageLimit = 300;
+  MessageStore? _history;
+
+  /// 解析出来的应用目录。历史、头像都挂在它下面。
+  ///
+  /// 留着它是因为头像不走 [MessageStore]（那是消息的抽象，不该塞图片进去），
+  /// 但**目录解析必须只有一处真相** —— 让界面自己去调 path_provider 拼路径，
+  /// 迟早会和历史目录跑偏。
+  Directory? _appRoot;
+
+  /// 头像存储。拿不到应用目录（降级到内存）时是 null。
+  AvatarStore? get _avatars {
+    final injected = _injectedAvatars;
+    if (injected != null) return injected;
+    final root = _appRoot;
+    return root == null ? null : AvatarStore(root);
+  }
+
+  /// 拿不到应用目录，退化成内存存储了。界面要据此提示用户。
+  bool get historyDegraded => _historyDegraded;
+  bool _historyDegraded = false;
+
   static const int logLimit = 120;
 
   /// 双讲判据的余量：麦克风电平要比播放电平高这么多，才算"真的是你在说"。
   static const double doubleTalkMarginDb = 6;
 
-  /// 网络失败的重试退避上限。
-  static const int maxBackoffMs = 15000;
+  bool _disposed = false;
+
+  /// 给运行态用的回调。
+  ///
+  /// 档案的轮询是**独立的一条线**，它可能在 controller 已经 dispose 之后
+  /// 才跑完最后一次循环。直接挂 `notifyListeners` 的话，那一次回调会打在
+  /// 一个已经销毁的 ChangeNotifier 上，debug 模式下直接抛断言。
+  void _safeNotify() {
+    if (_disposed) return;
+    notifyListeners();
+  }
+
+  void _safeLog(String message) {
+    if (_disposed) return;
+    _append(message);
+  }
 
   // ---------------------------------------------------------------- 配置
 
@@ -107,14 +175,118 @@ class ConversationController extends ChangeNotifier {
   DebugAudioProfile get debugProfile => _debugProfile;
 
   Future<void> loadConfig() async {
-    _config = await _store.load();
+    _config = (await _store.load()).normalized();
+    await _syncRuntimes();
+    // 先把聚焦档案的历史读出来，这样一打开 App 就看得见上次聊到哪儿了，
+    // 不用等到点"开始对话"。
+    await focused?.load();
     notifyListeners();
   }
 
   Future<void> updateConfig(AssistantConfig config) async {
-    _config = config;
+    final previousFocus = _config.focusedProfileId;
+    final next = config.normalized();
+
+    // 焦点被这份新配置挪走了（正在聚焦的档案被关掉/删掉）—— 和手动切换
+    // 一样，先把旧档案的账结掉、把声音停掉再换。**不这么做的话，关掉一个
+    // 正在说话的档案，它的声音会接着播完**，而没听完的那几句会被记到
+    // 新档案头上。这一步必须在 `_config` 被替换之前做：结账认的是"此刻
+    // 聚焦的那个"。
+    if (next.focusedProfileId != previousFocus) {
+      await _settleBeforeLeavingFocus();
+    }
+
+    _config = next;
+    await _syncRuntimes();
+    // 焦点被 config 改掉了（删掉正在聚焦的档案、关掉它、或者直接改
+    // focusedProfileId），新聚焦那个档案的历史得读进来。消息窗口是懒加载的，
+    // 不主动读的话切过去会看到一片空白。
+    if (_config.focusedProfileId != previousFocus) {
+      await focused?.load();
+    }
     notifyListeners();
-    await _store.save(config);
+    await _store.save(_config);
+  }
+
+  /// 拿历史存储。拿不到应用目录就退化成内存版，并且**记下来**。
+  ///
+  /// 静默退化到"看着有历史其实没有"是不可接受的：用户会以为东西存住了，
+  /// 重启之后才发现全没了。
+  Future<MessageStore> _ensureHistory() async {
+    final existing = _history;
+    if (existing != null) return existing;
+
+    final injected = _injectedHistory;
+    if (injected != null) return _history = injected;
+
+    final dir = await _appDirResolver();
+    if (dir == null) {
+      _historyDegraded = true;
+      _append('⚠️ 拿不到应用目录，历史只留在内存里，重启就没了');
+      return _history = MemoryMessageStore();
+    }
+    _appRoot = dir;
+    return _history = FileMessageStore(
+      root: dir,
+      onWarn: (message) => _append('⚠️ $message'),
+    );
+  }
+
+  /// 让运行态和配置对齐：新建缺的、丢掉多余的、更新改过的。
+  ///
+  /// 配置可以从好几个地方变（设置页存盘、关掉某个档案、删除档案），
+  /// 集中在这里收口，免得每个改配置的地方都要自己记得同步。
+  Future<void> _syncRuntimes() async {
+    final history = await _ensureHistory();
+    final wanted = <String, Profile>{
+      for (final profile in _config.profiles) profile.id: profile,
+    };
+
+    for (final id in _runtimes.keys.toList()) {
+      if (wanted.containsKey(id)) continue;
+      final gone = _runtimes.remove(id)!;
+      await gone.dispose();
+    }
+
+    for (final entry in wanted.entries) {
+      final existing = _runtimes[entry.key];
+      if (existing == null) {
+        _runtimes[entry.key] = ProfileRuntime(
+          profile: entry.value,
+          brain: _brainFactory(),
+          store: history,
+          onChanged: _safeNotify,
+          onLog: _safeLog,
+          isActive: () => _active,
+          // 现读，不缓存：焦点随时可能被换掉（滑动、关闭档案、删档案）
+          isFocused: () => _config.focusedProfileId == entry.key,
+          onReply: _enqueueReply,
+        );
+      } else {
+        existing.updateProfile(entry.value);
+      }
+    }
+
+    await _syncPolling();
+  }
+
+  /// 按每个档案的状态决定它那条轮询该不该跑。
+  ///
+  /// 关闭的档案不轮询；会话没开始（或者已经结束）时谁都不跑。
+  ///
+  /// 还没填 brain 的档案也不轮询：新建的档案默认是开着的，地址还没填就要
+  /// 去连，会以 15 秒的退避一路空转到用户填好为止 —— 那是纯粹的耗电和
+  /// 服务端噪音。填好之后 [updateConfig] 会重新走到这里把它拉起来。
+  Future<void> _syncPolling() async {
+    for (final runtime in _runtimes.values) {
+      final shouldRun =
+          _active && runtime.profile.enabled && runtime.profile.brain.isUsable;
+      if (shouldRun) {
+        if (!runtime.running) runtime.startPolling();
+      } else {
+        await runtime.stopPolling();
+      }
+    }
   }
 
   // ---------------------------------------------------------------- 状态
@@ -144,18 +316,12 @@ class ConversationController extends ChangeNotifier {
   /// 听写状态也一起失灵）。缓冲里还有没播完的，就是还在说。
   bool get speaking => _speaking || _backlogFrames > 0;
 
-  bool _polling = false;
-  bool get polling => _polling;
-
   /// 上行是否在用 Opus。启动时运行时探测一次。
   bool _opusUpstream = false;
   bool get opusUpstream => _opusUpstream;
 
   final ValueNotifier<AudioLevels> levelsNotifier =
       ValueNotifier(const AudioLevels(micDb: -120, playbackDb: -120));
-
-  final List<ConversationMessage> _messages = <ConversationMessage>[];
-  List<ConversationMessage> get messages => List.unmodifiable(_messages);
 
   final List<LogEntry> _log = <LogEntry>[];
   List<LogEntry> get log => List.unmodifiable(_log);
@@ -169,21 +335,185 @@ class ConversationController extends ChangeNotifier {
   int get queuedUtterances => _speakQueue?.pendingCount ?? 0;
   int get droppedUtterances => _speakQueue?.dropped ?? 0;
 
+  // ---------------------------------------------------------------- 档案
+
+  /// 每个档案一个运行态。
+  ///
+  /// 下面那几个转发 getter（[messages] / [polling] / [brainError]…）一律
+  /// 读**聚焦的那个**。这样界面和现有测试都不用改 —— 它们本来就只关心
+  /// "我正在看的这个档案"。
+  final Map<String, ProfileRuntime> _runtimes = <String, ProfileRuntime>{};
+
+  ProfileRuntime? get focused => _runtimes[_config.focusedProfileId];
+
+  /// 聚焦档案的消息流。
+  List<ConversationMessage> get messages =>
+      focused?.messages ?? const <ConversationMessage>[];
+
+  bool get polling => focused?.polling ?? false;
+
   /// 最近一次 brain 失败的原因。成功一次就清掉。
   ///
   /// 网络抖动本来就不该往外抛（协议层没有错误响应），但让用户完全看不见
   /// 也不对 —— brain 连不上时主界面停在"正在听你说"是骗人的。
   /// 鉴权失败则必须显式提示，那属于配置错误。
-  String? _brainError;
-  String? get brainError => _brainError;
+  String? get brainError => focused?.error;
 
-  bool get authFailed => _authFailed;
-  bool _authFailed = false;
+  bool get authFailed => focused?.authFailed ?? false;
 
-  void _setBrainError(String? message) {
-    if (_brainError == message) return;
-    _brainError = message;
+  /// 盘上还有更早的历史没读进来。
+  bool get hasMoreBefore => focused?.hasMoreBefore ?? false;
+
+  /// 最新一条的 seq。界面靠它判断"是不是来了新消息"。
+  int get lastSeq => focused?.lastSeq ?? 0;
+
+  /// 往上翻一页更早的历史。
+  Future<void> loadOlder() => focused?.loadOlder() ?? Future<void>.value();
+
+  /// 聚焦档案的历史已经从盘上读过了没有。
+  ///
+  /// 界面靠它区分"**确实没有**历史"和"历史还没读出来"：少了这个标志，
+  /// 冷启动会先闪一句"直接说话就行"，下一帧历史才冒出来。
+  bool get historyLoaded => focused?.loaded ?? false;
+
+  /// 某个档案头像的绝对路径。没设头像、或者拿不到应用目录，返回 null。
+  ///
+  /// **同步、不查文件**：这个方法会在每帧 build 里被调用。文件真丢了
+  /// 由 `Image` 的 errorBuilder 退回图标。
+  String? avatarPathOf(Profile profile) => _avatars?.pathOf(profile.avatarFile);
+
+
+  /// 切换的串行队列。见 [switchProfile]。
+  Future<void> _switchQueue = Future<void>.value();
+
+  /// 把焦点挪到另一个档案上。
+  ///
+  /// 正在播的声音**立刻停**（用户明确要求）。
+  ///
+  /// **音频不重启**：麦克风、断句引擎、前台服务、电平表全都和档案无关，
+  /// 切档案换掉的只是"数据从哪儿来、往哪儿去"。切的时候 segmenter 可能正
+  /// 处在"你说了半句"的中间态，那半句会照常切出来发给新档案 —— 这不算串流，
+  /// 你确实是在切换之后说的那句话。
+  ///
+  /// **切换是排队的。** 滑得快的时候会有两次切换重叠：结账和留痕发生在
+  /// 几个 await 之后，那时候焦点可能已经被另一次切换改掉了 —— A 没听完的
+  /// 那笔账会记到 C 头上，C 还会平白多一条"切走的时候这条没播完"。
+  /// 排队之后每次切换都在前一次收敛之后再跑，账目和留痕都落在正确的人头上。
+  Future<void> switchProfile(String id) {
+    final next = _switchQueue.then((_) => _switchProfileNow(id));
+    // 队列自己吞掉异常：一次失败不该让后面每一次切换都跟着失败。
+    // （返回给调用方的仍然是会抛的那一个。）
+    _switchQueue = next.catchError((Object _) {});
+    return next;
+  }
+
+  Future<void> _switchProfileNow(String id) async {
+    if (id == _config.focusedProfileId) return;
+    final runtime = _runtimes[id];
+    // 关掉的档案不能被聚焦：它什么都不跑，聚过去只会是一片沉默。
+    if (runtime == null || !runtime.profile.enabled) return;
+
+    // 进函数就把"从哪儿切走"钉死。后面几个 await 期间焦点可能被别的
+    // 调用改掉，结账和留痕必须落在这个快照上。
+    final from = _config.focusedProfileId;
+
+    // 旧档案没听完的那笔账先结掉，声音也停掉。**此刻焦点还指着它**，
+    // 所以"没听到的那些字"会记到它头上 —— 那些字确实是它说的，下次跟它
+    // 说话时该报给它，而不是报给刚切过来的这个。
+    await _settleBeforeLeavingFocus();
+
+    if (_config.focusedProfileId != from) return; // 焦点已经被别人改掉了
+
+    _config = _config.copyWith(focusedProfileId: id);
     notifyListeners();
+
+    // 换一整屏历史。后台那段时间攒的消息没有进内存窗口，所以要重新读盘。
+    await runtime.load();
+    notifyListeners();
+
+    await _store.save(_config);
+  }
+
+  /// 新建或者更新一个档案。
+  ///
+  /// 改配置一律走 `updateConfig`，让 [_syncRuntimes] 收口 —— 不这样
+  /// 的话，每个改配置的地方都得自己记得同步运行态。
+  Future<void> saveProfile(Profile profile) =>
+      updateConfig(_config.withProfile(profile));
+
+  /// 删掉一个档案。
+  ///
+  /// **盘上的历史不跟着删** —— 那是用户的东西，删一个配置项不该顺手把它清掉。
+  /// 历史占的空间由设置页的"清空历史"单独负责。
+  ///
+  /// 头像删掉：没有档案再引用它了，留在盘上就是一份永远没人认得的垃圾。
+  Future<void> removeProfile(String id) async {
+    final index = _config.profiles.indexWhere((p) => p.id == id);
+    if (index < 0) return;
+    final avatar = _config.profiles[index].avatarFile;
+    await updateConfig(_config.withoutProfile(id));
+    // 有别的档案引用同一个文件就别删（配置被手工改过才可能出现）
+    final stillUsed = _config.profiles.any((p) => p.avatarFile == avatar);
+    if (!stillUsed) await _avatars?.remove(avatar);
+  }
+
+  /// 按 id 找当前配置里的档案。找不到返回 null。
+  Profile? _profileById(String id) {
+    final index = _config.profiles.indexWhere((p) => p.id == id);
+    return index < 0 ? null : _config.profiles[index];
+  }
+
+  /// 给某个档案换头像。传 null 表示去掉头像。
+  ///
+  /// 文件操作放在 controller 里而不是设置页：目录解析的唯一真相在
+  /// [_ensureHistory]，界面自己拼路径迟早会和历史目录跑偏。
+  ///
+  /// 失败（图读不到、目录写不了）**会抛** —— 静默失败比不换更糟，
+  /// 用户会以为换好了。
+  ///
+  /// **写回前重新取一次档案。** 拷贝图片是个文件操作，中间可能过了几十
+  /// 毫秒，这期间设置页可能已经把别的字段（名字、brain、开关）存进去了；
+  /// 拿进函数时的快照写回，会把这些改动悄悄回滚掉。
+  Future<void> setAvatar(String profileId, String? sourcePath) async {
+    if (_profileById(profileId) == null) return;
+    final store = _avatars;
+    if (store == null) {
+      throw const FileSystemException('拿不到应用目录，头像存不住');
+    }
+
+    if (sourcePath == null) {
+      final current = _profileById(profileId);
+      if (current == null) return;
+      await saveProfile(current.copyWith(clearAvatar: true));
+      await store.remove(current.avatarFile);
+      return;
+    }
+
+    // 先把新图拷进来再改配置：反过来做的话，拷贝失败会让配置里留一个
+    // 指向不存在文件的 avatarFile，界面上就是"换了头像但显示不出来"。
+    final name = await store.import(profileId, sourcePath);
+    final current = _profileById(profileId);
+    if (current == null) {
+      // 拷贝期间档案被删了。图已经落盘，但没人引用它了，收掉。
+      await store.remove(name);
+      return;
+    }
+    await saveProfile(current.copyWith(avatarFile: name));
+    if (current.avatarFile != name) await store.remove(current.avatarFile);
+  }
+
+  /// 清掉某个档案的全部历史（盘上和内存一起）。
+  Future<void> clearHistory(String id) async {
+    await _runtimes[id]?.clearHistory();
+  }
+
+  /// 这个档案的历史占多少字节。0 表示没有历史或者读不到。
+  Future<int> historyBytes(String id) async {
+    try {
+      return await (await _ensureHistory()).sizeBytes(id);
+    } catch (_) {
+      return 0;
+    }
   }
 
   // ---------------------------------------------------------------- 内部
@@ -249,18 +579,12 @@ class ConversationController extends ChangeNotifier {
   /// 断句点。按比例估位置时往后找最近的这些字符，别把句子劈开。
   static const String _sentenceBreaks = '。！？；.!?;\n，,、';
 
-  /// 上一段 AI 语音里，用户**实际听到了多少毫秒**。
+  /// 「上一段听到多少毫秒」和「没听到的那部分文字」这两笔账**在档案身上**
+  /// （`ProfileRuntime.pendingHeardMs` / `pendingUnheardText`）。
   ///
-  /// 挂在下一句 /human-to-brain 上带过去（协议里没有单独的汇报端点）。
-  /// 上传成功才清掉：失败就留着，迟到也比丢了强。
-  int? _pendingHeardMs;
-
-  /// "没听到的那部分文字"，攒到下一次上传才发出去。
-  ///
-  /// **是累加的，不是覆盖的。** 一次打断只算出"当前这条回复"没听完的尾巴，
-  /// 但被打断之后 brain 往往还会再发一条，那条也可能整个没被听到 ——
-  /// 只留最后一次，前面那些就凭空消失了。攒到上传成功才清。
-  String? _pendingUnheardText;
+  /// 挂在 controller 上的话，在 A 里打断攒下的账会跟着下一次上传发给 B ——
+  /// 因为下一次上传时读的是"当前聚焦那个档案"的账。这是整个改造里最隐蔽的
+  /// 一个 bug，专门有测试盯着。
 
   /// 正在播的这条回复的时间账（brain 给的，**可能为空**）。
   /// 有它就精确到句；没有就退回按比例估。
@@ -336,8 +660,8 @@ class ConversationController extends ChangeNotifier {
 
     try {
       _log.clear();
-      _messages.clear();
-      _authFailed = false;
+      // **消息流不清。** 它在 loadConfig 时已经从盘上读回来了，这里只要
+      // 别破坏它就行 —— 上次聊过的内容，这次打开还在。
       _append('开始对话');
 
       final gate = permissionGate;
@@ -400,8 +724,8 @@ class ConversationController extends ChangeNotifier {
       // 不等播完 —— 回话之间的空隙因此只剩网络本身。
       _playbackTask = _playbackLoop();
 
-      // 循环 B 独立跑，不阻塞 start()
-      unawaited(_pollBrainToHumanLoop());
+      // 每个开着档案各起一条轮询，独立跑，不阻塞 start()
+      await _syncPolling();
     } catch (e) {
       _append('启动失败：$e');
       await _teardown();
@@ -601,6 +925,12 @@ class ConversationController extends ChangeNotifier {
   Future<void> _sendUtterance(QueuedUtterance utterance) async {
     if (!_active) return;
 
+    // 上行只可能属于聚焦的那个档案 —— 采集、断句、上传这条链路整个挂在
+    // controller 上，未聚焦的档案里根本不存在这些东西。
+    final runtime = focused;
+    if (runtime == null) return;
+    final brain = runtime.profile.brain;
+
     try {
       // 规范只收 Ogg Opus，所以没有回落分支 ——
       // 编码器不可用就明确报错，不发一个服务端一定拒的格式。
@@ -613,22 +943,24 @@ class ConversationController extends ChangeNotifier {
       if (opus == null) {
         _opusUpstream = false;
         _append('⚠️ 本机没有可用的 Opus 编码器，这段语音发不出去');
-        _setBrainError('本机缺少 Opus 编码器');
+        runtime.setError('本机缺少 Opus 编码器');
         notifyListeners();
         return;
       }
       _opusUpstream = true;
 
-      final heard = _pendingHeardMs;
-      final unheard = _pendingUnheardText;
+      // 这两笔账读的是**当前档案**的。切换档案不会把它们带走，
+      // 所以在 A 里攒下的"漏听"不会报给 B。
+      final heard = runtime.pendingHeardMs;
+      final unheard = runtime.pendingUnheardText;
       _append('上传 ${_kb(opus.length)} → /human-to-brain'
           '${heard == null ? "" : "（附：上一段只听到 ${(heard / 1000).toStringAsFixed(1)}s）"}'
           '${unheard == null ? "" : "（没听到：$unheard）"}');
 
-      final result = await _brain.humanToBrain(
-        baseUrl: _config.brain.baseUrl,
-        brainId: _config.brain.brainId,
-        token: _config.brain.token,
+      final result = await runtime.brain.humanToBrain(
+        baseUrl: brain.baseUrl,
+        brainId: brain.brainId,
+        token: brain.token,
         oggBytes: opus,
         heardMs: heard,
         unheardText: unheard,
@@ -638,100 +970,31 @@ class ConversationController extends ChangeNotifier {
 
       // 请求落地了，这条就不用再挂着。失败时走不到这里 —— 留着给下一次，
       // "你漏了一段"迟到也比丢了好。
-      _pendingHeardMs = null;
-      _pendingUnheardText = null;
+      runtime.pendingHeardMs = null;
+      runtime.pendingUnheardText = null;
 
       final text = result.text.trim();
       if (text.isEmpty) {
         _append('/human-to-brain 返回空文本');
         return;
       }
-      _setBrainError(null);
-      _authFailed = false;
-      _addMessage(MessageRole.user, text);
+      runtime.setError(null);
+      runtime.authFailed = false;
+      await runtime.record(MessageRole.user, text);
     } on BrainException catch (e) {
       // 会话已经结束的话，这个异常多半是我们自己 abort() 断出来的，
       // 不是真的网络故障，别报出来吓人。
       if (!_active) return;
       _append(e.message);
       if (e.kind == BrainErrorKind.auth) {
-        _authFailed = true;
+        runtime.authFailed = true;
       }
-      _setBrainError(e.message);
+      runtime.setError(e.message);
     } catch (e) {
       if (!_active) return;
       _append('/human-to-brain 失败：$e');
-      _setBrainError('$e');
+      runtime.setError('$e');
     }
-  }
-
-  // ---------------------------------------------------------------- 循环 B：轮询 /brain-to-human
-
-  Future<void> _pollBrainToHumanLoop() async {
-    _polling = true;
-    notifyListeners();
-
-    var backoffMs = 500;
-
-    loop:
-    while (_active) {
-      try {
-        final response = await _brain.brainToHuman(
-          baseUrl: _config.brain.baseUrl,
-          brainId: _config.brain.brainId,
-          token: _config.brain.token,
-        );
-
-        if (!_active) break;
-
-        backoffMs = 500;
-        _setBrainError(null);
-
-        switch (response) {
-          case BrainEmpty():
-            // 立刻再发一次，不停不等
-            continue loop;
-
-          case BrainReply(:final text, :final audio, :final spans):
-            // 文本永远进消息流，无论语音后面会不会被清掉
-            if (text.trim().isNotEmpty) {
-              _addMessage(MessageRole.assistant, text);
-            }
-            if (audio.isEmpty) {
-              _append('/brain-to-human 只有文本，没有音频');
-            } else {
-              // **只管塞进队列，不等它播完** —— 塞完立刻回去问下一条。
-              // 播放是另一条线的事。
-              _enqueueReply(text, audio, spans);
-            }
-        }
-      } on BrainException catch (e) {
-        if (!_active) break;
-
-        _setBrainError(e.message);
-        _append(e.message);
-
-        // 401 是配置错误，重试只会把它变成持续请求 —— 停下并提示
-        if (e.kind == BrainErrorKind.auth) {
-          _authFailed = true;
-          _append('⚠️ 鉴权失败，已停止轮询。检查配置里的 token。');
-          break;
-        }
-
-        // 网络问题自己退避重试，不往外抛
-        _append('${backoffMs}ms 后重试');
-        await Future<void>.delayed(Duration(milliseconds: backoffMs));
-        backoffMs = (backoffMs * 2).clamp(500, maxBackoffMs);
-      } catch (e) {
-        if (!_active) break;
-        _append('/brain-to-human 异常：$e');
-        await Future<void>.delayed(Duration(milliseconds: backoffMs));
-        backoffMs = (backoffMs * 2).clamp(500, maxBackoffMs);
-      }
-    }
-
-    _polling = false;
-    notifyListeners();
   }
 
   // ---------------------------------------------------------------- 播放队列（另一条线）
@@ -904,13 +1167,23 @@ class ConversationController extends ChangeNotifier {
   ///
   /// 挂到下一次请求而不是当场单独发一条：协议里没有汇报端点，
   /// 而且它天然属于"下一句话的上下文"。
-  void _recordHeard(int heardMs, int discarded, String queuedText, String why) {
-    _pendingHeardMs = heardMs;
+  void _recordHeard(
+    int heardMs,
+    int discarded,
+    String queuedText,
+    String why, {
+    /// 这笔账记在谁头上。**默认是此刻聚焦的那个**，但切换/关档案那条路上
+    /// 有 await，中途焦点可能已经变了 —— 那就得显式传"声音本来属于谁"，
+    /// 不然旧档案没听完的话会被记到新档案头上。
+    ProfileRuntime? target,
+  }) {
+    final to = target ?? focused;
+    to?.pendingHeardMs = heardMs;
 
     // 就是用户给的那个式子：
     //   被打断的那条没听完的尾巴 ++ 队列里还没轮到播的整条正文
-    _appendUnheard(_unheardFrom(heardMs));
-    _appendUnheard(queuedText);
+    _appendUnheard(_unheardFrom(heardMs), to);
+    _appendUnheard(queuedText, to);
 
     // 这条的账已经算过了，清掉 —— 不然紧接着再来一次打断（比如通知栏
     // 又按一下）会把同一段文字重复算一遍。
@@ -933,11 +1206,44 @@ class ConversationController extends ChangeNotifier {
   ///
   /// 累加而不是覆盖：一次打断只处理到当时的队列，之后队列还会再进东西
   /// （取的那条线一直在跑），那些也得算上，直到下一次上传成功才清。
-  void _appendUnheard(String? chunk) {
-    final text = chunk?.trim() ?? '';
-    if (text.isEmpty) return;
-    _pendingUnheardText =
-        _pendingUnheardText == null ? text : '$_pendingUnheardText$text';
+  ///
+  /// 账记在**聚焦档案**头上。切档案时先结账再切，所以这些字会正确地
+  /// 报给说这些话的那个 brain，不会串到别的档案去。
+  void _appendUnheard(String? chunk, [ProfileRuntime? target]) {
+    (target ?? focused)?.appendUnheard(chunk);
+  }
+
+  /// 焦点即将离开当前这个档案之前必须做的事：把没听完的账结掉、把声音停掉。
+  ///
+  /// **改焦点不止"滑动切换"一条路**：关掉正在聚焦的档案、把它删掉，
+  /// `normalized()` 也会把焦点挪到别人身上。不在这一个地方收口的话，
+  /// 那条路上声音会接着响（队列里还压着它的回复），而"没听完的那几句"
+  /// 会被记到**新**档案头上 —— 下次跟新档案说话，旧档案的漏听文本就报给它了。
+  Future<void> _settleBeforeLeavingFocus() async {
+    // 结账对象**进函数时就钉死**：下面有 await，中途焦点可能被改掉。
+    final leaving = focused;
+    if (leaving == null) return;
+
+    if (!_active) {
+      // 没在会话里，播放循环本来就没跑。但还是要抬 epoch —— 万一有在途的
+      // 解码/推送，它会看到 epoch 变了而自己退出去。
+      _playbackEpoch++;
+      _replyQueue.clear();
+      return;
+    }
+
+    final wasAudible = speaking;
+    final heard = wasAudible ? await _heardMs() : 0;
+    final (discarded, queued) = await _interruptPlayback();
+    if (!wasAudible) return;
+
+    _recordHeard(heard, discarded, queued, '切换档案，停掉正在播的语音',
+        target: leaving);
+    // 用户切回来会看到文字却想不起当时没听完，留一行痕。
+    // 只在真的打断了声音时才留，光切来切去不写。
+    if (_config.focusedProfileId == leaving.id) {
+      _addMessage(MessageRole.note, '切走的时候这条没播完');
+    }
   }
 
   /// 把"播到第几毫秒"翻成"哪几个字没被听到"。
@@ -1217,10 +1523,13 @@ class ConversationController extends ChangeNotifier {
   Future<void> _teardown() async {
     _active = false;
 
-    // 立刻掐掉在途的请求。
-    // 尤其是那个长轮询 —— 服务端的 handler 接了 AbortSignal，
+    // 立刻掐掉所有在途的请求。
+    // 尤其是那些长轮询 —— 服务端的 handler 接了 AbortSignal，
     // 我们一断开它就会取消自己的工作；不断的话它会一直挂到超时。
-    _brain.abort();
+    // 每个档案一个客户端，所以要逐个停（stopPolling 内部会 abort）。
+    for (final runtime in _runtimes.values) {
+      await runtime.stopPolling();
+    }
 
     _statsTimer?.cancel();
     _statsTimer = null;
@@ -1254,22 +1563,22 @@ class ConversationController extends ChangeNotifier {
       await _engine.stopService();
     } catch (_) {}
 
-    // 会话结束时闭麦也算结束：先把痕留下（消息列表要到下次 start 才清），
-    // 免得用户看着"闭麦中"然后什么都没有。
+    // 会话结束时闭麦也算结束：先把痕留下，免得用户看着"闭麦中"
+    // 然后什么都没有。消息流本身不清 —— 它就留在这儿，下次打开还在。
     if (_micMuted) {
       _micMuted = false;
       _flushMuteTrace();
     }
     _mutedMs = 0;
-    _pendingHeardMs = null;
-    _pendingUnheardText = null;
     _replySpans = const <BrainSpan>[];
     _replyText = '';
     _replyTotalMs = 0;
 
+    // 「没听到」那两笔账**故意不清**：它是"下一句要带给 brain 的上下文"，
+    // 会话结束不等于这件事没发生过。下次接着说话时照样会带过去。
+    // 错误态也不清：它是档案的属性，不是这次会话的。
+
     _format = null;
-    _brainError = null;
-    _authFailed = false;
     _userSpeaking = false;
     _speechRunMs = 0;
     _bargeInFired = false;
@@ -1290,12 +1599,15 @@ class ConversationController extends ChangeNotifier {
     }
   }
 
+  /// 往**聚焦档案**的消息流里写一条。
+  ///
+  /// 落盘是异步的：先把消息写进盘、由 store 发号，拿到带 seq 的那条再进内存。
+  /// 调用点一律不 await —— 界面晚几毫秒看到消息，比内存里的 seq 和盘上
+  /// 对不上强得多（对不上会让往上翻历史漏条重条）。
   void _addMessage(MessageRole role, String text) {
-    _messages.add(ConversationMessage(role: role, text: text));
-    while (_messages.length > messageLimit) {
-      _messages.removeAt(0);
-    }
-    notifyListeners();
+    final runtime = focused;
+    if (runtime == null) return;
+    unawaited(runtime.record(role, text));
   }
 
   void _append(String message) {
@@ -1303,13 +1615,33 @@ class ConversationController extends ChangeNotifier {
     while (_log.length > logLimit) {
       _log.removeLast();
     }
-    notifyListeners();
+    // 用带守卫的通知：dispose 之后平台侧可能还有回调在飞，
+    // 打在已 dispose 的 ChangeNotifier 上是 debug 断言失败。
+    _safeNotify();
   }
 
   static String _kb(int bytes) => '${(bytes / 1024).toStringAsFixed(1)}KB';
 
+  /// 放掉三条音频订阅。
+  ///
+  /// dispose 是同步的，而 cancel 返回 Future —— **不等**。取消这件事本身
+  /// 是立刻生效的，Future 等的是收尾。不放的话，平台侧还在推帧，回调会
+  /// 打在已经 dispose 的 `levelsNotifier` 上。
+  void _cancelAudioSubscriptions() {
+    final mic = _micSub;
+    final level = _levelSub;
+    final event = _eventSub;
+    _micSub = null;
+    _levelSub = null;
+    _eventSub = null;
+    if (mic != null) unawaited(mic.cancel());
+    if (level != null) unawaited(level.cancel());
+    if (event != null) unawaited(event.cancel());
+  }
+
   @override
   void dispose() {
+    _disposed = true;
     _active = false;
     _statsTimer?.cancel();
     // 别让播放循环挂在没人叫醒的 Future 上
@@ -1317,8 +1649,12 @@ class ConversationController extends ChangeNotifier {
     _queueSignal = null;
     _speakQueue?.dispose();
     _segmenter?.dispose();
+    _cancelAudioSubscriptions();
     levelsNotifier.dispose();
-    _brain.dispose();
+    for (final runtime in _runtimes.values) {
+      unawaited(runtime.dispose());
+    }
+    _runtimes.clear();
     super.dispose();
   }
 }
