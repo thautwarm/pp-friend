@@ -4,6 +4,12 @@
          FOREGROUND_SERVICE_MICROPHONE / MEDIA_PLAYBACK 是 Android 14 起
          前台服务声明 microphone|mediaPlayback 类型的前提，缺一个就会抛
          MissingForegroundServiceTypeException。 -->
+    <!-- INTERNET 必须写在这里，不能只在 src/debug 里。
+         Flutter 模板把 INTERNET 放在 src/debug/AndroidManifest.xml，那是给
+         热重载和调试器用的 —— 只有 debug 变体会合并进去。release 变体没有它，
+         网络被内核层按 uid 掐断，dart:io 的每个连接都直接失败：表现就是
+         debug 能对话、release 一声不吭，而且没有任何报错线索。 -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
