@@ -199,7 +199,7 @@ class _SettingsPageState extends State<SettingsPage>
             controller: _tabs,
             tabs: const [
               Tab(text: '档案'),
-              Tab(text: '断句参数'),
+              Tab(text: '通用'),
             ],
           ),
         ),
@@ -379,6 +379,26 @@ class _SettingsPageState extends State<SettingsPage>
               label: '最长一句 (s)',
               hint: '60 —— 说超过就强制切开，避免一直说不完',
               keyboardType: TextInputType.number,
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        SettingsSection(
+          title: '音量键',
+          children: [
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              value: widget.controller.config.volumeKeyClearsQueue,
+              onChanged: (enabled) => widget.controller.updateConfig(
+                widget.controller.config
+                    .copyWith(volumeKeyClearsQueue: enabled),
+              ),
+              title: const Text('音量减键清空队列'),
+              subtitle: const Text(
+                '开着：AI 正在说话时按音量减等于让它闭嘴。只在 App 前台生效，\n'
+                '后台和锁屏由通知栏的「停止说话」按钮兜着。\n'
+                '关掉：音量减就是普通的调音量，想清空走那个通知按钮。',
+              ),
             ),
           ],
         ),

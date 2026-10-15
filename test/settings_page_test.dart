@@ -34,9 +34,16 @@ AssistantConfig _twoProfiles() => const AssistantConfig(
 /// 异步文件 IO 在那里永远不会完成 —— 测试不是失败，是直接挂死，
 /// 连 `--timeout` 都救不了（超时靠定时器，定时器也在假时钟里）。
 Future<(ConversationController, FakeAvatarStore)> _boot() async {
+  final (controller, avatars, _) = await _bootFull();
+  return (controller, avatars);
+}
+
+/// 要多一个假引擎的时候用它 —— 断言"配置有没有真的推到原生"需要拿到它。
+Future<(ConversationController, FakeAvatarStore, FakeVoiceEngine)> _bootFull() async {
   final avatars = FakeAvatarStore();
+  final engine = FakeVoiceEngine();
   final controller = ConversationController(
-    engine: FakeVoiceEngine(),
+    engine: engine,
     brainFactory: () => BrainClient(
       client: MockClient((_) async => throw StateError('不该发请求')),
     ),
@@ -47,7 +54,7 @@ Future<(ConversationController, FakeAvatarStore)> _boot() async {
             FakeSegmenter(),
   );
   await controller.updateConfig(_twoProfiles());
-  return (controller, avatars);
+  return (controller, avatars, engine);
 }
 
 Future<void> _pump(WidgetTester tester, ConversationController controller) async {
@@ -67,20 +74,46 @@ Finder _field(String label) =>
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues(<String, Object>{}));
 
-  testWidgets('顶层是两个 tab：档案 / 断句参数', (tester) async {
+  testWidgets('顶层是两个 tab：档案 / 通用', (tester) async {
     final (controller, _) = await _boot();
     addTearDown(controller.dispose);
 
     await _pump(tester, controller);
 
     expect(find.text('档案'), findsOneWidget);
-    expect(find.text('断句参数'), findsOneWidget);
+    expect(find.text('通用'), findsOneWidget);
     // 默认停在档案 tab
     expect(_field('Base URL'), findsOneWidget);
 
-    await tester.tap(find.text('断句参数'));
+    await tester.tap(find.text('通用'));
     await tester.pumpAndSettle();
     expect(_field('静音判定 (ms)'), findsOneWidget);
+  });
+
+  testWidgets('关掉「音量减键清空队列」，会推到原生', (tester) async {
+    // 原生侧按 onKeyDown 收键，它看不到配置 —— 不推下去的话，开关在界面上
+    // 动了，按键行为一动不动。
+    final (controller, _, engine) = await _bootFull();
+    addTearDown(controller.dispose);
+
+    await _pump(tester, controller);
+    await tester.tap(find.text('通用'));
+    await tester.pumpAndSettle();
+
+    expect(controller.config.volumeKeyClearsQueue, isTrue, reason: '默认是拦');
+    expect(engine.volumeKeyPushes, isEmpty, reason: '没人动过，不该推');
+
+    // 这一节排在断句参数下面，默认在视口外 —— 不先滚进去就点，会点在空气上
+    // （Flutter 会警告 hitTest 落在别的控件上，但测试照样"通过"到下一步）。
+    final tile = find.text('音量减键清空队列');
+    await tester.ensureVisible(tile);
+    await tester.pumpAndSettle();
+    await tester.tap(tile);
+    await tester.pumpAndSettle();
+
+    expect(controller.config.volumeKeyClearsQueue, isFalse);
+    expect(engine.volumeKeyClearsQueue, isFalse, reason: '推下去的还是旧值就等于没改');
+    expect(engine.volumeKeyPushes, [false]);
   });
 
   testWidgets('点另一个档案的 tab，就切到它的设置', (tester) async {

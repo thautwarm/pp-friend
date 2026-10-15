@@ -26,6 +26,7 @@ class AssistantConfig {
     this.vadMaxSpeechS = 60,
     this.vadRingCapacityMs = 70000,
     this.bargeIn = false,
+    this.volumeKeyClearsQueue = true,
   });
 
   /// 从只有 `brain` 字段的老配置迁移出来时，给那个档案的固定 id。
@@ -108,6 +109,15 @@ class AssistantConfig {
   ///
   /// 闭麦开着时它天然失效（音频根本没上去，本地断句听不到任何东西）。
   final bool bargeIn;
+
+  /// 音量减键 = 让它闭嘴。
+  ///
+  /// **默认开**（保持原行为）。关掉之后音量减就是普通的调音量，
+  /// 想清空播放队列走通知栏的「停止说话」按钮。
+  ///
+  /// 做成开关的原因：AI 正在说话时想"把声音调小一点"和想"让它别说了"
+  /// 是两个意图，前者更常见。键被吞掉时音量调不动，用户只会以为手机卡了。
+  final bool volumeKeyClearsQueue;
 
   /// 把某个档案整个换掉（找不到就追加）。改档案配置用这个，别去动列表本身。
   AssistantConfig withProfile(Profile profile) {
@@ -192,6 +202,7 @@ class AssistantConfig {
     int? vadMaxSpeechS,
     int? vadRingCapacityMs,
     bool? bargeIn,
+    bool? volumeKeyClearsQueue,
   }) {
     final nextProfiles = List<Profile>.of(profiles ?? this.profiles);
     var nextFocused = focusedProfileId ?? this.focusedProfileId;
@@ -223,6 +234,7 @@ class AssistantConfig {
       vadMaxSpeechS: vadMaxSpeechS ?? this.vadMaxSpeechS,
       vadRingCapacityMs: vadRingCapacityMs ?? this.vadRingCapacityMs,
       bargeIn: bargeIn ?? this.bargeIn,
+      volumeKeyClearsQueue: volumeKeyClearsQueue ?? this.volumeKeyClearsQueue,
     );
   }
 
@@ -242,6 +254,7 @@ class AssistantConfig {
         'vadMaxSpeechS': vadMaxSpeechS,
         'vadRingCapacityMs': vadRingCapacityMs,
         'bargeIn': bargeIn,
+        'volumeKeyClearsQueue': volumeKeyClearsQueue,
       };
 
   /// 老 JSON 里没有 `profiles` / `focusedProfileId`，靠这里补出来；
@@ -291,6 +304,10 @@ class AssistantConfig {
       vadMaxSpeechS: (json['vadMaxSpeechS'] as num?)?.toInt() ?? 60,
       vadRingCapacityMs: (json['vadRingCapacityMs'] as num?)?.toInt() ?? 70000,
       bargeIn: json['bargeIn'] as bool? ?? false,
+      // 老配置里没有这个键 —— 缺省当作开，行为跟升级前一致。
+      // 类型不对也当缺省，不让一个字段把整份配置带崩（那条教训在 Profile 上踩过）。
+      volumeKeyClearsQueue:
+          json['volumeKeyClearsQueue'] is bool ? json['volumeKeyClearsQueue'] as bool : true,
     );
   }
 }

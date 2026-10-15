@@ -139,6 +139,13 @@ class MethodChannelVoiceEngine implements VoiceEngine {
   }
 
   @override
+  Future<void> setVolumeKeyClearsQueue(bool enabled) async {
+    await _method.invokeMethod<void>('setVolumeKeyClearsQueue', {
+      'enabled': enabled,
+    });
+  }
+
+  @override
   Future<DebugAudioProfile> currentDebugProfile() async {
     // 原生只在 apply 时回传，这里用默认值兜底即可。
     return const DebugAudioProfile();

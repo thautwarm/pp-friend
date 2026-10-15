@@ -196,7 +196,14 @@ class ConversationController extends ChangeNotifier {
       await _settleBeforeLeavingFocus();
     }
 
+    final volumeKeyChanged =
+        next.volumeKeyClearsQueue != _config.volumeKeyClearsQueue;
+
     _config = next;
+    if (volumeKeyChanged) {
+      // 按键是原生侧收的，它看不到配置 —— 改了就得推一次。
+      await _engine.setVolumeKeyClearsQueue(next.volumeKeyClearsQueue);
+    }
     await _syncRuntimes();
     // 焦点被 config 改掉了（删掉正在聚焦的档案、关掉它、或者直接改
     // focusedProfileId），新聚焦那个档案的历史得读进来。消息窗口是懒加载的，
@@ -684,6 +691,11 @@ class ConversationController extends ChangeNotifier {
       _append('前台服务已启动，可切到其他应用或锁屏');
 
       await _engine.applyDebugProfile(_debugProfile);
+
+      // 音量键的归属也归配置文件管，原生侧默认是"拦"。这里是**无条件推一次**：
+      // 原生那个布尔活在进程里，热重启 Flutter 侧不会重置它 —— 只推"变化"
+      // 的话，用户关掉开关后重开一次会话，值又回到原生的默认了。
+      await _engine.setVolumeKeyClearsQueue(_config.volumeKeyClearsQueue);
 
       final format = await _engine.startAudio();
       _format = format;

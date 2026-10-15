@@ -45,6 +45,11 @@ class VoiceEnginePlugin(private val context: Context, messenger: BinaryMessenger
                         result.success(engine.profile.toMap())
                     }
 
+                    "setVolumeKeyClearsQueue" -> {
+                        engine.volumeKeyClearsQueue = call.argument<Boolean>("enabled") ?: true
+                        result.success(true)
+                    }
+
                     "startService" -> {
                         VoiceAssistantService.start(context)
                         result.success(true)

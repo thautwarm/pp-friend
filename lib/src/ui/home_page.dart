@@ -270,7 +270,10 @@ class _HomePageState extends State<HomePage> {
       // 压在"正在说话/正在听"前面：麦克风关着是这一屏最重要的事实
       text = '闭麦中 · 说的话不会上传';
     } else if (controller.speaking) {
-      text = '正在说话 · 音量减可以清空';
+      // 关掉那个开关之后音量减就只是调音量了，再写着"可以清空"是骗人
+      text = controller.config.volumeKeyClearsQueue
+          ? '正在说话 · 音量减可以清空'
+          : '正在说话';
     } else if (controller.userSpeaking) {
       text = '正在听你说';
     } else if (controller.queuedUtterances > 0) {

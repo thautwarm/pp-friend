@@ -131,6 +131,19 @@ class FakeVoiceEngine implements VoiceEngine {
   Future<DebugAudioProfile> currentDebugProfile() async =>
       const DebugAudioProfile();
 
+  /// 原生侧那个布尔值在测试里的对应物。默认 true = 拦截。
+  bool volumeKeyClearsQueue = true;
+
+  /// 记录每一次推送。断言"改了配置会不会真的推下去"要用它 ——
+  /// 只看当前值的话，会漏掉"推了但值没变"和"根本没推"这两种。
+  final List<bool> volumeKeyPushes = <bool>[];
+
+  @override
+  Future<void> setVolumeKeyClearsQueue(bool enabled) async {
+    volumeKeyClearsQueue = enabled;
+    volumeKeyPushes.add(enabled);
+  }
+
   @override
   Future<DecodedAudio> decodeAudio(Uint8List bytes) async =>
       DecodedAudio(pcm16le: decodedPcm, sampleRate: decodedRate, channels: 1);

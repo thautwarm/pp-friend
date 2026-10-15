@@ -157,6 +157,15 @@ class NativeVoiceEngine private constructor(private val appContext: Context) {
         }
     }
 
+    /**
+     * 音量减键要不要当作"让它闭嘴"。
+     *
+     * 默认 true —— 跟这个开关出现之前的行为一致。开关活在 Dart 侧的配置里，
+     * 由那边推下来；原生侧拿不到配置，所以这里存一份。
+     */
+    @Volatile
+    var volumeKeyClearsQueue: Boolean = true
+
     // ---------------------------------------------------------------- Service 联动
 
     var serviceRunning: Boolean = false

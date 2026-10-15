@@ -266,6 +266,13 @@ abstract class VoiceEngine {
 
   Future<DebugAudioProfile> currentDebugProfile();
 
+  /// 音量减键要不要当成"让它闭嘴"。
+  ///
+  /// 这个开关活在 Dart 侧（配置里），而按键是在 Activity 的 onKeyDown 里
+  /// 收到的 —— 原生拿不到配置，只能这样推下去。默认 true 由原生侧兜底，
+  /// 所以启动时不调它也不会漏。
+  Future<void> setVolumeKeyClearsQueue(bool enabled);
+
   /// 把压缩音频（OGG/Opus、WAV、MP3…）解成 PCM16。
   ///
   /// 必须在原生做：Dart 侧没有可用的 Opus 解码器。
