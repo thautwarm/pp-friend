@@ -18,6 +18,13 @@ import 'support/voice_fakes.dart';
 /// 48kHz 下 20ms 一帧。
 final Uint8List _frame = Uint8List(1920);
 
+/// 切出来的一句话。内容无所谓，要的是"有东西排进上传队列"。
+SpeechSegment _segment() => SpeechSegment(
+      pcm16le: Uint8List(320),
+      sampleRate: fakeSileroRate,
+      durationSeconds: 0.3,
+    );
+
 /// 假 brain **群**：每个档案一个。
 ///
 /// 路由靠请求体里的 brain_id，这正是要验的东西 —— 每个档案只跟自己那个
@@ -41,6 +48,9 @@ class _FakeBrains {
 
   /// 这些 brain 的 /brain-to-human 一律回 401（token 不对）。
   final Set<String> unauthorized = {};
+
+  /// 挂住上行请求不放，用它验"排队中切档案"。
+  Completer<void>? uploadGate;
 
   void queue(
     String brainId, {
@@ -83,6 +93,8 @@ class _FakeBrains {
 
     uploads.add(request.bodyBytes);
     uploadTargets.add(brainId);
+    // 记完之后再挂住：请求算"已经到了服务端"，只是回包还没回来
+    if (uploadGate != null) await uploadGate!.future;
     return http.Response.bytes(
       msgpack.serialize(<String, dynamic>{'kind': 'text', 'text': '收到'}),
       200,
@@ -351,6 +363,43 @@ void main() {
       engine.pushGate!.complete();
       engine.pushGate = null;
       await _settle();
+    });
+
+    test('切走之后，还排在队里没发出去的那句不再发了', () async {
+      // 留着的话，轮到它发的时候会按"当时聚焦的档案"决定发给谁 —— 新档案的
+      // 历史里会凭空多出一条它没听到的"你说的话"，旧档案则永远不知道你说过。
+      final brains = _FakeBrains()..uploadGate = Completer<void>();
+      // 没开 opus 的话那一段在编码那一步就被丢掉了，根本走不到上传
+      final engine = FakeVoiceEngine()..opusUpstream = true;
+      final segmenter = FakeSegmenter();
+      final controller = await _boot(brains, engine, segmenter);
+      addTearDown(controller.dispose);
+
+      // 喂一帧，让 controller 把断句回调递进来（`emit` 靠它）
+      engine.micCtrl.add(_frame);
+      await _settle();
+
+      // 第一句卡在上传里（还没回来）
+      segmenter.emit(_segment());
+      await _settle();
+      expect(brains.uploadTargets, ['a']);
+
+      // 第二句排在队里，还没轮到它发
+      segmenter.emit(_segment());
+      await _settle();
+      expect(controller.queuedUtterances, 1);
+
+      await controller.switchProfile('p_b');
+      await _settle();
+
+      brains.uploadGate!.complete();
+      brains.uploadGate = null;
+      await _settle(20);
+
+      expect(brains.uploadTargets, ['a'],
+          reason: '切走之后不能再发任何东西 —— 尤其是不能发给新档案');
+      expect(brains.uploadTargets, isNot(contains('b')));
+      expect(controller.queuedUtterances, 0);
     });
 
     test('切换会换掉整屏历史', () async {

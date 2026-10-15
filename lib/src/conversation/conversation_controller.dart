@@ -1224,6 +1224,21 @@ class ConversationController extends ChangeNotifier {
     final leaving = focused;
     if (leaving == null) return;
 
+    // 还没发出去的那几句**直接丢掉**（用户定的规矩）。
+    //
+    // 留着的话，轮到它们发的时候会按"当时聚焦的档案"决定发给谁 —— 而你
+    // 已经切走了，于是新档案的历史里凭空多出一条它根本没听到的"你说的话"，
+    // 旧档案的 brain 则永远不知道你说过这句。
+    //
+    // 丢掉的意思是：切走 = 之前还没发出去的不再发了。已经在发的那一句拦不住
+    // （它的目标在开始发的时候就定了，那时候还是对的）。本地的用户消息是
+    // `/human-to-brain` 成功之后才记的，所以丢掉也不会在历史里留半条。
+    final stranded = _speakQueue?.pendingCount ?? 0;
+    if (stranded > 0) {
+      _speakQueue?.clear();
+      _append('切档案：丢掉还没上传的 $stranded 句');
+    }
+
     if (!_active) {
       // 没在会话里，播放循环本来就没跑。但还是要抬 epoch —— 万一有在途的
       // 解码/推送，它会看到 epoch 变了而自己退出去。
