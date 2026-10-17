@@ -103,11 +103,15 @@ void main() {
     expect(controller.config.volumeKeyClearsQueue, isTrue, reason: '默认是拦');
     expect(engine.volumeKeyPushes, isEmpty, reason: '没人动过，不该推');
 
-    // 这一节排在断句参数下面，默认在视口外 —— 不先滚进去就点，会点在空气上
-    // （Flutter 会警告 hitTest 落在别的控件上，但测试照样"通过"到下一步）。
+    // 这一节排在断句参数和说话人识别下面，默认在视口外。ListView 是懒构建的，
+    // 屏幕外的项根本不在树里 —— `ensureVisible` 找不到它，必须先滚出来。
     final tile = find.text('音量减键清空队列');
-    await tester.ensureVisible(tile);
-    await tester.pumpAndSettle();
+    final list = find.byType(ListView).last;
+    for (var i = 0; i < 20 && tile.evaluate().isEmpty; i++) {
+      await tester.drag(list, const Offset(0, -300));
+      await tester.pumpAndSettle();
+    }
+    expect(tile, findsOneWidget, reason: '滚到底也该看得见这一项');
     await tester.tap(tile);
     await tester.pumpAndSettle();
 

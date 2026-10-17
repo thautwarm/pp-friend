@@ -68,6 +68,26 @@ class DebugPage extends StatelessWidget {
                 ),
                 _chip(context, '闭麦', controller.micMuted),
                 _chip(context, '打断', controller.bargeIn),
+                _chip(
+                  context,
+                  stats.speakerVerifyEnabled
+                      ? (stats.speakerCos >= 0
+                          ? '声纹 ${stats.speakerCos.toStringAsFixed(2)}'
+                          : '声纹待测')
+                      : '声纹比对关',
+                  stats.speakerVerifyEnabled &&
+                      stats.speakerCos >= controller.config.pvadMinCosine,
+                ),
+                // 声纹比对挂上时 pVAD 不参与判定，也不再显示那个
+                // 会让人误以为"概率低就该被丢"的数字。
+                if (!stats.speakerVerifyEnabled)
+                  _chip(
+                    context,
+                    stats.pvadEnabled
+                        ? '本人概率 ${stats.pvadProb.toStringAsFixed(2)}'
+                        : '说话人识别关',
+                    stats.pvadEnabled,
+                  ),
               ],
             ),
             const SizedBox(height: 16),
@@ -173,6 +193,16 @@ class DebugPage extends StatelessWidget {
                     // 单帧超过 3ms 就意味着单核 15% 被吃掉，该挪出 main isolate 了
                     stats.lastFeedMicros > 3000
                         ? theme.colorScheme.error
+                        : theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                Expanded(
+                  child: _stat(
+                    context,
+                    '滤掉非本人',
+                    '${stats.pvadFiltered}',
+                    stats.pvadFiltered > 0
+                        ? theme.colorScheme.primary
                         : theme.colorScheme.onSurfaceVariant,
                   ),
                 ),

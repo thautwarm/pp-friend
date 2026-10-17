@@ -27,6 +27,10 @@ class AssistantConfig {
     this.vadRingCapacityMs = 70000,
     this.bargeIn = false,
     this.volumeKeyClearsQueue = true,
+    this.pvadEnabled = true,
+    this.pvadThreshold = 0.5,
+    this.pvadMinTargetRatio = 0.5,
+    this.pvadMinCosine = 0.4,
   });
 
   /// 从只有 `brain` 字段的老配置迁移出来时，给那个档案的固定 id。
@@ -119,6 +123,28 @@ class AssistantConfig {
   /// 是两个意图，前者更常见。键被吞掉时音量调不动，用户只会以为手机卡了。
   final bool volumeKeyClearsQueue;
 
+  /// 说话人识别：只把注册过的那个人的话上传给 brain。
+  ///
+  /// **默认开，但没导入声纹时自动不生效** —— 门控需要一份
+  /// `spkemb.f32`，没有它就没法判断"谁在说"，行为退回升级前。
+  /// 导入入口在设置页。
+  final bool pvadEnabled;
+
+  /// 单帧判为"目标人"的阈值。调高更严（更容易把本人也滤掉），
+  /// 调低更松（更容易放别人进来）。
+  final double pvadThreshold;
+
+  /// 一段里目标帧占比达到多少才保留。**pVAD 默认已经不挂了**，
+  /// 这个值和 [pvadThreshold] 只在需要切回逐帧判据时才有用；
+  /// 正常判定以 [pvadMinCosine] 为准。
+  final double pvadMinTargetRatio;
+
+  /// 整段声纹相似度（ECAPA cosine）低于它就丢掉这一段。
+  ///
+  /// 这是"整段丢不丢"的主参数。同一个人的不同录音通常 > 0.5，
+  /// 不同人通常 < 0.3，0.4 左右是安全的分界。调高更严。
+  final double pvadMinCosine;
+
   /// 把某个档案整个换掉（找不到就追加）。改档案配置用这个，别去动列表本身。
   AssistantConfig withProfile(Profile profile) {
     final next = List<Profile>.of(profiles);
@@ -203,6 +229,10 @@ class AssistantConfig {
     int? vadRingCapacityMs,
     bool? bargeIn,
     bool? volumeKeyClearsQueue,
+    bool? pvadEnabled,
+    double? pvadThreshold,
+    double? pvadMinTargetRatio,
+    double? pvadMinCosine,
   }) {
     final nextProfiles = List<Profile>.of(profiles ?? this.profiles);
     var nextFocused = focusedProfileId ?? this.focusedProfileId;
@@ -235,6 +265,10 @@ class AssistantConfig {
       vadRingCapacityMs: vadRingCapacityMs ?? this.vadRingCapacityMs,
       bargeIn: bargeIn ?? this.bargeIn,
       volumeKeyClearsQueue: volumeKeyClearsQueue ?? this.volumeKeyClearsQueue,
+      pvadEnabled: pvadEnabled ?? this.pvadEnabled,
+      pvadThreshold: pvadThreshold ?? this.pvadThreshold,
+      pvadMinTargetRatio: pvadMinTargetRatio ?? this.pvadMinTargetRatio,
+      pvadMinCosine: pvadMinCosine ?? this.pvadMinCosine,
     );
   }
 
@@ -255,6 +289,10 @@ class AssistantConfig {
         'vadRingCapacityMs': vadRingCapacityMs,
         'bargeIn': bargeIn,
         'volumeKeyClearsQueue': volumeKeyClearsQueue,
+        'pvadEnabled': pvadEnabled,
+        'pvadThreshold': pvadThreshold,
+        'pvadMinTargetRatio': pvadMinTargetRatio,
+        'pvadMinCosine': pvadMinCosine,
       };
 
   /// 老 JSON 里没有 `profiles` / `focusedProfileId`，靠这里补出来；
@@ -308,6 +346,12 @@ class AssistantConfig {
       // 类型不对也当缺省，不让一个字段把整份配置带崩（那条教训在 Profile 上踩过）。
       volumeKeyClearsQueue:
           json['volumeKeyClearsQueue'] is bool ? json['volumeKeyClearsQueue'] as bool : true,
+      // 老配置里没有这几个键 —— 缺省就是"开，但没声纹时不生效"。
+      pvadEnabled: json['pvadEnabled'] is bool ? json['pvadEnabled'] as bool : true,
+      pvadThreshold: (json['pvadThreshold'] as num?)?.toDouble() ?? 0.5,
+      pvadMinTargetRatio:
+          (json['pvadMinTargetRatio'] as num?)?.toDouble() ?? 0.5,
+      pvadMinCosine: (json['pvadMinCosine'] as num?)?.toDouble() ?? 0.4,
     );
   }
 }

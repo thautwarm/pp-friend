@@ -189,6 +189,42 @@ class FakeSegmenter implements Segmenter {
 
   Function()? _onSpeechStart;
   Function(SpeechSegment)? _onUtterance;
+  void Function(FilteredSegment)? _onFiltered;
+
+  /// 挂门控时喂进来的声纹。测试可以用来断言"导入之后确实挂上了"。
+  Uint8List? gateVoiceprint;
+  double? gateThreshold;
+  double? gateMinTargetRatio;
+  double? gateMinCosine;
+  int gateAttachCount = 0;
+  int gateDetachCount = 0;
+  bool gateAttachSucceeds = true;
+  String? gateError;
+
+  @override
+  Future<bool> attachSpeakerGate(
+    Uint8List spkemb, {
+    required double threshold,
+    required double minTargetRatio,
+    required double minCosine,
+  }) async {
+    gateAttachCount++;
+    gateVoiceprint = spkemb;
+    gateThreshold = threshold;
+    gateMinTargetRatio = minTargetRatio;
+    gateMinCosine = minCosine;
+    gateError = gateAttachSucceeds ? null : '假的门控失败';
+    return gateAttachSucceeds;
+  }
+
+  @override
+  void detachSpeakerGate() {
+    gateDetachCount++;
+    gateError = null;
+  }
+
+  @override
+  String? get speakerGateError => gateError;
 
   @override
   String get name => 'fake';
@@ -201,11 +237,20 @@ class FakeSegmenter implements Segmenter {
     Uint8List pcm16le, {
     required void Function() onSpeechStart,
     required void Function(SpeechSegment segment) onUtterance,
+    void Function(FilteredSegment segment)? onFiltered,
   }) {
     // 必须复制：controller 对静音那一路是复用同一块零缓冲的。
     frames.add(Uint8List.fromList(pcm16le));
     _onSpeechStart = onSpeechStart;
     _onUtterance = onUtterance;
+    _onFiltered = onFiltered;
+  }
+
+  /// 手动"门控丢了一段"。
+  void emitFiltered(FilteredSegment segment) {
+    final cb = _onFiltered;
+    if (cb == null) throw StateError('还没喂过帧');
+    cb(segment);
   }
 
   @override

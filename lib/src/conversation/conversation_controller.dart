@@ -15,6 +15,7 @@ import '../storage/avatar_store.dart';
 import '../storage/file_message_store.dart';
 import '../storage/memory_message_store.dart';
 import '../storage/message_store.dart';
+import '../storage/voiceprint_store.dart';
 import '../voice/voice_engine.dart';
 import 'message.dart';
 import 'profile_runtime.dart';
@@ -132,6 +133,16 @@ class ConversationController extends ChangeNotifier {
   /// 迟早会和历史目录跑偏。
   Directory? _appRoot;
 
+  /// 声纹存储。拿不到应用目录时是 null（此时说话人识别不可用）。
+  VoiceprintStore? get voiceprintStore {
+    final root = _appRoot;
+    return root == null ? null : VoiceprintStore(root);
+  }
+
+  /// 盘上有没有声纹。设置页拿它决定显示"已导入"还是"未导入"。
+  bool get hasVoiceprint => _hasVoiceprint;
+  bool _hasVoiceprint = false;
+
   /// 头像存储。拿不到应用目录（降级到内存）时是 null。
   AvatarStore? get _avatars {
     final injected = _injectedAvatars;
@@ -177,6 +188,7 @@ class ConversationController extends ChangeNotifier {
   Future<void> loadConfig() async {
     _config = (await _store.load()).normalized();
     await _syncRuntimes();
+    await refreshVoiceprint();
     // 先把聚焦档案的历史读出来，这样一打开 App 就看得见上次聊到哪儿了，
     // 不用等到点"开始对话"。
     await focused?.load();
@@ -198,8 +210,15 @@ class ConversationController extends ChangeNotifier {
 
     final volumeKeyChanged =
         next.volumeKeyClearsQueue != _config.volumeKeyClearsQueue;
+    final pvadChanged = next.pvadEnabled != _config.pvadEnabled ||
+        next.pvadThreshold != _config.pvadThreshold ||
+        next.pvadMinTargetRatio != _config.pvadMinTargetRatio;
 
     _config = next;
+    if (pvadChanged) {
+      // 门控是挂在活着的断句器上的，改完立刻重挂 —— 不用重开对话。
+      await _applySpeakerGate();
+    }
     if (volumeKeyChanged) {
       // 按键是原生侧收的，它看不到配置 —— 改了就得推一次。
       await _engine.setVolumeKeyClearsQueue(next.volumeKeyClearsQueue);
@@ -237,6 +256,98 @@ class ConversationController extends ChangeNotifier {
       root: dir,
       onWarn: (message) => _append('⚠️ $message'),
     );
+  }
+
+  // ---------------------------------------------------------------- 声纹
+
+  /// 重新检查盘上有没有声纹。设置页打开时、导入/删除之后各调一次。
+  Future<void> refreshVoiceprint() async {
+    final store = voiceprintStore;
+    final present = store != null && await store.exists();
+    if (present == _hasVoiceprint) return;
+    _hasVoiceprint = present;
+    _safeNotify();
+  }
+
+  /// 导入声纹。格式不对抛 [FormatException]，界面负责显示原因。
+  ///
+  /// 会话正在进行时立刻生效：挂门控只加一个推理节点，不用重建断句器。
+  Future<void> importVoiceprint(Uint8List bytes) async {
+    final store = voiceprintStore;
+    if (store == null) throw StateError('拿不到应用目录，声纹存不下来');
+    final voiceprint = Voiceprint.parse(bytes);
+    await store.save(voiceprint);
+    _hasVoiceprint = true;
+    _append('声纹已导入（192 维）');
+    await _applySpeakerGate();
+    _safeNotify();
+  }
+
+  Future<void> removeVoiceprint() async {
+    final store = voiceprintStore;
+    if (store == null) return;
+    await store.clear();
+    _hasVoiceprint = false;
+    _segmenter?.detachSpeakerGate();
+    _append('声纹已删除 —— 所有说话人都会被上传');
+    _safeNotify();
+  }
+
+  /// 配置里的说话人识别开关变了之后重新挂一次。
+  Future<void> _applySpeakerGate() async {
+    final segmenter = _segmenter;
+    if (segmenter == null) return;
+    await _attachSpeakerGate(segmenter);
+  }
+
+  Future<void> _attachSpeakerGate(Segmenter segmenter) async {
+    if (!_config.pvadEnabled) {
+      segmenter.detachSpeakerGate();
+      return;
+    }
+    final store = voiceprintStore;
+    final voiceprint = store == null ? null : await store.load();
+    if (voiceprint == null) {
+      _append('说话人识别：还没导入声纹，所有声音都会上传');
+      return;
+    }
+    // FNV-1a 指纹：用来确认"现在导入的是哪一份声纹"，只用于日志。
+    var fp = 0x811c9dc5;
+    for (final b in voiceprint.bytes) {
+      fp = ((fp ^ b) * 0x01000193) & 0xffffffff;
+    }
+    debugPrint('SPK attach fp=${fp.toRadixString(16)} '
+        'cos>=${_config.pvadMinCosine}');
+    final ok = await segmenter.attachSpeakerGate(
+      voiceprint.bytes,
+      threshold: _config.pvadThreshold,
+      minTargetRatio: _config.pvadMinTargetRatio,
+      minCosine: _config.pvadMinCosine,
+    );
+    if (ok) {
+      _append('说话人识别已启用：只上传本人的声音'
+          '（声纹相似度 ≥ ${_config.pvadMinCosine.toStringAsFixed(2)}）');
+    } else {
+      final why = segmenter.speakerGateError;
+      _append('⚠️ 说话人识别没挂上${why == null ? '' : '：$why'}');
+    }
+  }
+
+  /// 被门控丢掉的段。日志节流一下：一家人聊天时它会一直触发，
+  /// 每条都写会把 120 条的事件环刷没。
+  int _filteredLogCount = 0;
+
+  void _onFilteredSegment(FilteredSegment segment) {
+    debugPrint('SPK drop ${segment.durationMs}ms '
+        'cos=${segment.speakerCos.toStringAsFixed(3)} '
+        'pvad=${segment.pvadScore.toStringAsFixed(3)} '
+        'ratio=${segment.pvadTargetRatio.toStringAsFixed(2)}');
+    _filteredLogCount++;
+    if (_filteredLogCount % 5 != 1) return;
+    final detail = segment.speakerCos >= 0
+        ? '声纹 cos ${segment.speakerCos.toStringAsFixed(2)}'
+        : '本人占比 ${(segment.pvadTargetRatio * 100).round()}%';
+    _append('说话人不是本人，丢掉一段 ${segment.durationMs}ms（$detail）');
   }
 
   /// 让运行态和配置对齐：新建缺的、丢掉多余的、更新改过的。
@@ -667,6 +778,7 @@ class ConversationController extends ChangeNotifier {
 
     try {
       _log.clear();
+      _filteredLogCount = 0;
       // **消息流不清。** 它在 loadConfig 时已经从盘上读回来了，这里只要
       // 别破坏它就行 —— 上次聊过的内容，这次打开还在。
       _append('开始对话');
@@ -779,6 +891,8 @@ class ConversationController extends ChangeNotifier {
       _segmenterError = null;
       _append('本地断句：${_segmenter!.name}'
           '（静音判定 ${_config.vadMinSilenceMs}ms / 阈值 ${_config.vadThreshold}）');
+      // 声纹门控是可选的：挂不上只记一行日志，不能连累断句。
+      await _attachSpeakerGate(_segmenter!);
       return true;
     } catch (e) {
       _segmenterError = '本地断句引擎加载失败：$e';
@@ -803,6 +917,7 @@ class ConversationController extends ChangeNotifier {
         (_micMuted || _shouldMuteMic()) ? _silence(frame.length) : frame,
         onSpeechStart: _onSpeechStart,
         onUtterance: _onUtterance,
+        onFiltered: _onFilteredSegment,
       );
       _trackSpeechRun(segmenter.stats, frame.length);
     } catch (e) {
@@ -901,6 +1016,10 @@ class ConversationController extends ChangeNotifier {
   }
 
   void _onUtterance(SpeechSegment segment) {
+    debugPrint('SPK keep ${segment.durationSeconds.toStringAsFixed(2)}s '
+        'cos=${segment.speakerCos.toStringAsFixed(3)} '
+        'pvad=${segment.pvadScore.toStringAsFixed(3)} '
+        'ratio=${segment.pvadTargetRatio.toStringAsFixed(2)}');
     _userSpeaking = false;
     // 这轮说完了，下一轮从头数起 —— 不然上一句攒的时长会算到下一句头上，
     // 让一句很轻的"嗯"也够格打断。

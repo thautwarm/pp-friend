@@ -7,11 +7,14 @@ import '../frb_generated.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `feed_inner`, `materialize`, `ms_to_samples`, `result`, `samples_per_ms`, `with_detector`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`
+// These functions are ignored because they are not marked as `pub`: `dropped`, `feed_inner`, `materialize`, `ms_to_samples`, `result`, `samples_per_ms`, `with_detector`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<SileroVadHandle>>
 abstract class SileroVadHandle implements RustOpaqueInterface {
+  /// 摘掉门控。摘掉之后所有段都放行。
+  void clearPvad();
+
   /// 喂一块 PCM16LE（长度任意，采样率必须是 `cfg.input_sample_rate`）。
   VadFeedResult feed({required List<int> pcm16Le});
 
@@ -25,7 +28,103 @@ abstract class SileroVadHandle implements RustOpaqueInterface {
   factory SileroVadHandle({required SegmenterConfig cfg}) =>
       RustLib.instance.api.crateApiVadSileroVadHandleNew(cfg: cfg);
 
+  /// 门控是否生效。推理失败之后会变成 false。
+  bool pvadEnabled();
+
+  /// 累计被判定为"不是目标人"而丢掉的段数。
+  int pvadFiltered();
+
   void reset();
+
+  /// 挂上说话人门控（pVAD）。
+  ///
+  /// `model` 是 `pvad.onnx` 的字节，`spkemb` 是 192 个 little-endian f32
+  /// （768 字节，由网页端或 Python 注册工具生成）。
+  ///
+  /// **必须在开始喂音频之前调完**：这一步要加载 3.9MB 模型并做图优化，
+  /// 是几十到几百毫秒的开销。
+  void setPvad({
+    required List<int> model,
+    required List<int> spkemb,
+    required PvadGateConfig cfg,
+  });
+
+  /// 挂上整段声纹比对（ECAPA cosine）。
+  ///
+  /// 和 [`Self::set_pvad`] 可以同时挂：够长的段以 cosine 为准，短段退回 pVAD。
+  /// `model` 是 `ecapa.onnx`（约 81 MiB）的字节，`spkemb` 是网页导出的 768 字节。
+  ///
+  /// **必须在开始喂音频之前调完**：加载 81 MiB 模型是秒级的开销。
+  void setSpeakerVerifier({
+    required List<int> model,
+    required List<int> spkemb,
+    required SpeakerVerifyConfig cfg,
+  });
+}
+
+/// 被说话人门控丢掉的一段。音频不传，只留元数据给调试面板。
+class DroppedSegment {
+  final int startMs;
+  final int endMs;
+  final int durationMs;
+  final double pvadScore;
+  final double pvadTargetRatio;
+  final double speakerCos;
+
+  const DroppedSegment({
+    required this.startMs,
+    required this.endMs,
+    required this.durationMs,
+    required this.pvadScore,
+    required this.pvadTargetRatio,
+    required this.speakerCos,
+  });
+
+  @override
+  int get hashCode =>
+      startMs.hashCode ^
+      endMs.hashCode ^
+      durationMs.hashCode ^
+      pvadScore.hashCode ^
+      pvadTargetRatio.hashCode ^
+      speakerCos.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is DroppedSegment &&
+          runtimeType == other.runtimeType &&
+          startMs == other.startMs &&
+          endMs == other.endMs &&
+          durationMs == other.durationMs &&
+          pvadScore == other.pvadScore &&
+          pvadTargetRatio == other.pvadTargetRatio &&
+          speakerCos == other.speakerCos;
+}
+
+/// 说话人门控参数。只有挂了 pVAD 才有意义。
+class PvadGateConfig {
+  /// 单帧判为"目标人"的阈值，0~1。
+  final double threshold;
+
+  /// 一段里目标帧占比达到多少才保留，0~1。
+  ///
+  /// 低于它的段会被**整段丢掉**：不上传、不进消息流。这是有意的 ——
+  /// 家人说话不该出现在 agent 的上下文里。
+  final double minTargetRatio;
+
+  const PvadGateConfig({required this.threshold, required this.minTargetRatio});
+
+  @override
+  int get hashCode => threshold.hashCode ^ minTargetRatio.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PvadGateConfig &&
+          runtimeType == other.runtimeType &&
+          threshold == other.threshold &&
+          minTargetRatio == other.minTargetRatio;
 }
 
 /// 切句参数。全部集中在一个结构里，以后加参数不会 churn Dart 的调用点。
@@ -89,6 +188,32 @@ class SegmenterConfig {
           ringCapacityMs == other.ringCapacityMs;
 }
 
+/// 整段声纹比对参数（ECAPA cosine）。
+class SpeakerVerifyConfig {
+  /// 和注册声纹的 cosine 低于它就丢掉这一段。同一个人的跨录音通常 > 0.5，
+  /// 不同人通常 < 0.3，0.4 左右是安全的分界。
+  final double minCosine;
+
+  /// 短于此长度的段不比声纹，退回 pVAD。太短的 embedding 不稳。
+  final int minVerifyMs;
+
+  const SpeakerVerifyConfig({
+    required this.minCosine,
+    required this.minVerifyMs,
+  });
+
+  @override
+  int get hashCode => minCosine.hashCode ^ minVerifyMs.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SpeakerVerifyConfig &&
+          runtimeType == other.runtimeType &&
+          minCosine == other.minCosine &&
+          minVerifyMs == other.minVerifyMs;
+}
+
 /// 每次喂音频的结果。
 class VadFeedResult {
   /// 处理完这一块之后，是否处于"正在说话"。
@@ -104,12 +229,36 @@ class VadFeedResult {
   /// 累计被缓冲挤掉多少毫秒音频（正常应该恒为 0）。
   final int droppedMs;
 
+  /// 这一帧之后说话人门控是否生效。
+  final bool pvadEnabled;
+
+  /// 最近一帧的 pVAD 平滑概率。没挂门控时是 0。
+  final double pvadProb;
+
+  /// 是否挂了整段声纹比对（ECAPA）。
+  final bool speakerVerifyEnabled;
+
+  /// 最近一段的声纹 cosine。还没比过时是 -1。
+  final double speakerCos;
+
+  /// 这一次 feed 里因为不是目标人而被丢掉的段。
+  final List<DroppedSegment> filtered;
+
+  /// 门控挂了的原因（推理失败、模型不兼容）。非空时 `pvad_enabled` 一定是 false。
+  final String? pvadError;
+
   const VadFeedResult({
     required this.speaking,
     required this.prob,
     required this.segments,
     required this.bufferedMs,
     required this.droppedMs,
+    required this.pvadEnabled,
+    required this.pvadProb,
+    required this.speakerVerifyEnabled,
+    required this.speakerCos,
+    required this.filtered,
+    this.pvadError,
   });
 
   @override
@@ -118,7 +267,13 @@ class VadFeedResult {
       prob.hashCode ^
       segments.hashCode ^
       bufferedMs.hashCode ^
-      droppedMs.hashCode;
+      droppedMs.hashCode ^
+      pvadEnabled.hashCode ^
+      pvadProb.hashCode ^
+      speakerVerifyEnabled.hashCode ^
+      speakerCos.hashCode ^
+      filtered.hashCode ^
+      pvadError.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -129,7 +284,13 @@ class VadFeedResult {
           prob == other.prob &&
           segments == other.segments &&
           bufferedMs == other.bufferedMs &&
-          droppedMs == other.droppedMs;
+          droppedMs == other.droppedMs &&
+          pvadEnabled == other.pvadEnabled &&
+          pvadProb == other.pvadProb &&
+          speakerVerifyEnabled == other.speakerVerifyEnabled &&
+          speakerCos == other.speakerCos &&
+          filtered == other.filtered &&
+          pvadError == other.pvadError;
 }
 
 /// 一段切好的话，自带音频。
@@ -149,6 +310,15 @@ class VadSegment {
   /// 这一段的开头已经被环形缓冲挤掉了（说明缓冲配小了）。正常情况恒为 false。
   final bool truncated;
 
+  /// pVAD 平滑概率的段内均值。没挂声纹门控时是 -1。
+  final double pvadScore;
+
+  /// 段内被判为目标人的帧占比，0~1。没挂门控时是 -1。
+  final double pvadTargetRatio;
+
+  /// 这一段和注册声纹的 cosine。没比或太短时是 -1。
+  final double speakerCos;
+
   const VadSegment({
     required this.pcm16Le,
     required this.sampleRate,
@@ -157,6 +327,9 @@ class VadSegment {
     required this.durationMs,
     required this.forcedCut,
     required this.truncated,
+    required this.pvadScore,
+    required this.pvadTargetRatio,
+    required this.speakerCos,
   });
 
   @override
@@ -167,7 +340,10 @@ class VadSegment {
       endMs.hashCode ^
       durationMs.hashCode ^
       forcedCut.hashCode ^
-      truncated.hashCode;
+      truncated.hashCode ^
+      pvadScore.hashCode ^
+      pvadTargetRatio.hashCode ^
+      speakerCos.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -180,5 +356,8 @@ class VadSegment {
           endMs == other.endMs &&
           durationMs == other.durationMs &&
           forcedCut == other.forcedCut &&
-          truncated == other.truncated;
+          truncated == other.truncated &&
+          pvadScore == other.pvadScore &&
+          pvadTargetRatio == other.pvadTargetRatio &&
+          speakerCos == other.speakerCos;
 }

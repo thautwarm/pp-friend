@@ -67,7 +67,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0';
 
   @override
-  int get rustContentHash => 848408548;
+  int get rustContentHash => 533939483;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -79,6 +79,8 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
 }
 
 abstract class RustLibApi extends BaseApi {
+  void crateApiVadSileroVadHandleClearPvad({required SileroVadHandle that});
+
   VadFeedResult crateApiVadSileroVadHandleFeed({
     required SileroVadHandle that,
     required List<int> pcm16Le,
@@ -90,7 +92,25 @@ abstract class RustLibApi extends BaseApi {
 
   SileroVadHandle crateApiVadSileroVadHandleNew({required SegmenterConfig cfg});
 
+  bool crateApiVadSileroVadHandlePvadEnabled({required SileroVadHandle that});
+
+  int crateApiVadSileroVadHandlePvadFiltered({required SileroVadHandle that});
+
   void crateApiVadSileroVadHandleReset({required SileroVadHandle that});
+
+  void crateApiVadSileroVadHandleSetPvad({
+    required SileroVadHandle that,
+    required List<int> model,
+    required List<int> spkemb,
+    required PvadGateConfig cfg,
+  });
+
+  void crateApiVadSileroVadHandleSetSpeakerVerifier({
+    required SileroVadHandle that,
+    required List<int> model,
+    required List<int> spkemb,
+    required SpeakerVerifyConfig cfg,
+  });
 
   Future<SegmenterConfig> crateApiVadSegmenterConfigDefault();
 
@@ -113,6 +133,35 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   });
 
   @override
+  void crateApiVadSileroVadHandleClearPvad({required SileroVadHandle that}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSileroVadHandle(
+            that,
+            serializer,
+          );
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 1)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiVadSileroVadHandleClearPvadConstMeta,
+        argValues: [that],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiVadSileroVadHandleClearPvadConstMeta =>
+      const TaskConstMeta(
+        debugName: "SileroVadHandle_clear_pvad",
+        argNames: ["that"],
+      );
+
+  @override
   VadFeedResult crateApiVadSileroVadHandleFeed({
     required SileroVadHandle that,
     required List<int> pcm16Le,
@@ -126,7 +175,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             serializer,
           );
           sse_encode_list_prim_u_8_loose(pcm16Le, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 1)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 2)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_vad_feed_result,
@@ -155,7 +204,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             that,
             serializer,
           );
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 2)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 3)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_u_32,
@@ -184,7 +233,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             that,
             serializer,
           );
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 3)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 4)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_bool,
@@ -212,7 +261,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_box_autoadd_segmenter_config(cfg, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 4)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 5)!;
         },
         codec: SseCodec(
           decodeSuccessData:
@@ -230,6 +279,64 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "SileroVadHandle_new", argNames: ["cfg"]);
 
   @override
+  bool crateApiVadSileroVadHandlePvadEnabled({required SileroVadHandle that}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSileroVadHandle(
+            that,
+            serializer,
+          );
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 6)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bool,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiVadSileroVadHandlePvadEnabledConstMeta,
+        argValues: [that],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiVadSileroVadHandlePvadEnabledConstMeta =>
+      const TaskConstMeta(
+        debugName: "SileroVadHandle_pvad_enabled",
+        argNames: ["that"],
+      );
+
+  @override
+  int crateApiVadSileroVadHandlePvadFiltered({required SileroVadHandle that}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSileroVadHandle(
+            that,
+            serializer,
+          );
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 7)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_u_32,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiVadSileroVadHandlePvadFilteredConstMeta,
+        argValues: [that],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiVadSileroVadHandlePvadFilteredConstMeta =>
+      const TaskConstMeta(
+        debugName: "SileroVadHandle_pvad_filtered",
+        argNames: ["that"],
+      );
+
+  @override
   void crateApiVadSileroVadHandleReset({required SileroVadHandle that}) {
     return handler.executeSync(
       SyncTask(
@@ -239,7 +346,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             that,
             serializer,
           );
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 5)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 8)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -259,6 +366,80 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  void crateApiVadSileroVadHandleSetPvad({
+    required SileroVadHandle that,
+    required List<int> model,
+    required List<int> spkemb,
+    required PvadGateConfig cfg,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSileroVadHandle(
+            that,
+            serializer,
+          );
+          sse_encode_list_prim_u_8_loose(model, serializer);
+          sse_encode_list_prim_u_8_loose(spkemb, serializer);
+          sse_encode_box_autoadd_pvad_gate_config(cfg, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 9)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiVadSileroVadHandleSetPvadConstMeta,
+        argValues: [that, model, spkemb, cfg],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiVadSileroVadHandleSetPvadConstMeta =>
+      const TaskConstMeta(
+        debugName: "SileroVadHandle_set_pvad",
+        argNames: ["that", "model", "spkemb", "cfg"],
+      );
+
+  @override
+  void crateApiVadSileroVadHandleSetSpeakerVerifier({
+    required SileroVadHandle that,
+    required List<int> model,
+    required List<int> spkemb,
+    required SpeakerVerifyConfig cfg,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSileroVadHandle(
+            that,
+            serializer,
+          );
+          sse_encode_list_prim_u_8_loose(model, serializer);
+          sse_encode_list_prim_u_8_loose(spkemb, serializer);
+          sse_encode_box_autoadd_speaker_verify_config(cfg, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 10)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiVadSileroVadHandleSetSpeakerVerifierConstMeta,
+        argValues: [that, model, spkemb, cfg],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiVadSileroVadHandleSetSpeakerVerifierConstMeta =>
+      const TaskConstMeta(
+        debugName: "SileroVadHandle_set_speaker_verifier",
+        argNames: ["that", "model", "spkemb", "cfg"],
+      );
+
+  @override
   Future<SegmenterConfig> crateApiVadSegmenterConfigDefault() {
     return handler.executeNormal(
       NormalTask(
@@ -267,7 +448,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 6,
+            funcId: 11,
             port: port_,
           );
         },
@@ -342,15 +523,51 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  PvadGateConfig dco_decode_box_autoadd_pvad_gate_config(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_pvad_gate_config(raw);
+  }
+
+  @protected
   SegmenterConfig dco_decode_box_autoadd_segmenter_config(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_segmenter_config(raw);
   }
 
   @protected
+  SpeakerVerifyConfig dco_decode_box_autoadd_speaker_verify_config(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_speaker_verify_config(raw);
+  }
+
+  @protected
+  DroppedSegment dco_decode_dropped_segment(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+    return DroppedSegment(
+      startMs: dco_decode_u_32(arr[0]),
+      endMs: dco_decode_u_32(arr[1]),
+      durationMs: dco_decode_u_32(arr[2]),
+      pvadScore: dco_decode_f_32(arr[3]),
+      pvadTargetRatio: dco_decode_f_32(arr[4]),
+      speakerCos: dco_decode_f_32(arr[5]),
+    );
+  }
+
+  @protected
   double dco_decode_f_32(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as double;
+  }
+
+  @protected
+  List<DroppedSegment> dco_decode_list_dropped_segment(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_dropped_segment).toList();
   }
 
   @protected
@@ -372,6 +589,24 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  String? dco_decode_opt_String(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_String(raw);
+  }
+
+  @protected
+  PvadGateConfig dco_decode_pvad_gate_config(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return PvadGateConfig(
+      threshold: dco_decode_f_32(arr[0]),
+      minTargetRatio: dco_decode_f_32(arr[1]),
+    );
+  }
+
+  @protected
   SegmenterConfig dco_decode_segmenter_config(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -385,6 +620,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       minSpeechMs: dco_decode_u_32(arr[4]),
       maxSpeechMs: dco_decode_u_32(arr[5]),
       ringCapacityMs: dco_decode_u_32(arr[6]),
+    );
+  }
+
+  @protected
+  SpeakerVerifyConfig dco_decode_speaker_verify_config(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return SpeakerVerifyConfig(
+      minCosine: dco_decode_f_32(arr[0]),
+      minVerifyMs: dco_decode_u_32(arr[1]),
     );
   }
 
@@ -416,14 +663,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   VadFeedResult dco_decode_vad_feed_result(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 5)
-      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    if (arr.length != 11)
+      throw Exception('unexpected arr length: expect 11 but see ${arr.length}');
     return VadFeedResult(
       speaking: dco_decode_bool(arr[0]),
       prob: dco_decode_f_32(arr[1]),
       segments: dco_decode_list_vad_segment(arr[2]),
       bufferedMs: dco_decode_u_32(arr[3]),
       droppedMs: dco_decode_u_32(arr[4]),
+      pvadEnabled: dco_decode_bool(arr[5]),
+      pvadProb: dco_decode_f_32(arr[6]),
+      speakerVerifyEnabled: dco_decode_bool(arr[7]),
+      speakerCos: dco_decode_f_32(arr[8]),
+      filtered: dco_decode_list_dropped_segment(arr[9]),
+      pvadError: dco_decode_opt_String(arr[10]),
     );
   }
 
@@ -431,8 +684,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   VadSegment dco_decode_vad_segment(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 7)
-      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
+    if (arr.length != 10)
+      throw Exception('unexpected arr length: expect 10 but see ${arr.length}');
     return VadSegment(
       pcm16Le: dco_decode_list_prim_u_8_strict(arr[0]),
       sampleRate: dco_decode_u_32(arr[1]),
@@ -441,6 +694,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       durationMs: dco_decode_u_32(arr[4]),
       forcedCut: dco_decode_bool(arr[5]),
       truncated: dco_decode_bool(arr[6]),
+      pvadScore: dco_decode_f_32(arr[7]),
+      pvadTargetRatio: dco_decode_f_32(arr[8]),
+      speakerCos: dco_decode_f_32(arr[9]),
     );
   }
 
@@ -506,6 +762,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  PvadGateConfig sse_decode_box_autoadd_pvad_gate_config(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_pvad_gate_config(deserializer));
+  }
+
+  @protected
   SegmenterConfig sse_decode_box_autoadd_segmenter_config(
     SseDeserializer deserializer,
   ) {
@@ -514,9 +778,50 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  SpeakerVerifyConfig sse_decode_box_autoadd_speaker_verify_config(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_speaker_verify_config(deserializer));
+  }
+
+  @protected
+  DroppedSegment sse_decode_dropped_segment(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_startMs = sse_decode_u_32(deserializer);
+    var var_endMs = sse_decode_u_32(deserializer);
+    var var_durationMs = sse_decode_u_32(deserializer);
+    var var_pvadScore = sse_decode_f_32(deserializer);
+    var var_pvadTargetRatio = sse_decode_f_32(deserializer);
+    var var_speakerCos = sse_decode_f_32(deserializer);
+    return DroppedSegment(
+      startMs: var_startMs,
+      endMs: var_endMs,
+      durationMs: var_durationMs,
+      pvadScore: var_pvadScore,
+      pvadTargetRatio: var_pvadTargetRatio,
+      speakerCos: var_speakerCos,
+    );
+  }
+
+  @protected
   double sse_decode_f_32(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return deserializer.buffer.getFloat32();
+  }
+
+  @protected
+  List<DroppedSegment> sse_decode_list_dropped_segment(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <DroppedSegment>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_dropped_segment(deserializer));
+    }
+    return ans_;
   }
 
   @protected
@@ -546,6 +851,28 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  String? sse_decode_opt_String(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_String(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  PvadGateConfig sse_decode_pvad_gate_config(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_threshold = sse_decode_f_32(deserializer);
+    var var_minTargetRatio = sse_decode_f_32(deserializer);
+    return PvadGateConfig(
+      threshold: var_threshold,
+      minTargetRatio: var_minTargetRatio,
+    );
+  }
+
+  @protected
   SegmenterConfig sse_decode_segmenter_config(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_inputSampleRate = sse_decode_u_32(deserializer);
@@ -563,6 +890,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       minSpeechMs: var_minSpeechMs,
       maxSpeechMs: var_maxSpeechMs,
       ringCapacityMs: var_ringCapacityMs,
+    );
+  }
+
+  @protected
+  SpeakerVerifyConfig sse_decode_speaker_verify_config(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_minCosine = sse_decode_f_32(deserializer);
+    var var_minVerifyMs = sse_decode_u_32(deserializer);
+    return SpeakerVerifyConfig(
+      minCosine: var_minCosine,
+      minVerifyMs: var_minVerifyMs,
     );
   }
 
@@ -597,12 +937,24 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_segments = sse_decode_list_vad_segment(deserializer);
     var var_bufferedMs = sse_decode_u_32(deserializer);
     var var_droppedMs = sse_decode_u_32(deserializer);
+    var var_pvadEnabled = sse_decode_bool(deserializer);
+    var var_pvadProb = sse_decode_f_32(deserializer);
+    var var_speakerVerifyEnabled = sse_decode_bool(deserializer);
+    var var_speakerCos = sse_decode_f_32(deserializer);
+    var var_filtered = sse_decode_list_dropped_segment(deserializer);
+    var var_pvadError = sse_decode_opt_String(deserializer);
     return VadFeedResult(
       speaking: var_speaking,
       prob: var_prob,
       segments: var_segments,
       bufferedMs: var_bufferedMs,
       droppedMs: var_droppedMs,
+      pvadEnabled: var_pvadEnabled,
+      pvadProb: var_pvadProb,
+      speakerVerifyEnabled: var_speakerVerifyEnabled,
+      speakerCos: var_speakerCos,
+      filtered: var_filtered,
+      pvadError: var_pvadError,
     );
   }
 
@@ -616,6 +968,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_durationMs = sse_decode_u_32(deserializer);
     var var_forcedCut = sse_decode_bool(deserializer);
     var var_truncated = sse_decode_bool(deserializer);
+    var var_pvadScore = sse_decode_f_32(deserializer);
+    var var_pvadTargetRatio = sse_decode_f_32(deserializer);
+    var var_speakerCos = sse_decode_f_32(deserializer);
     return VadSegment(
       pcm16Le: var_pcm16Le,
       sampleRate: var_sampleRate,
@@ -624,6 +979,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       durationMs: var_durationMs,
       forcedCut: var_forcedCut,
       truncated: var_truncated,
+      pvadScore: var_pvadScore,
+      pvadTargetRatio: var_pvadTargetRatio,
+      speakerCos: var_speakerCos,
     );
   }
 
@@ -698,6 +1056,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_pvad_gate_config(
+    PvadGateConfig self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_pvad_gate_config(self, serializer);
+  }
+
+  @protected
   void sse_encode_box_autoadd_segmenter_config(
     SegmenterConfig self,
     SseSerializer serializer,
@@ -707,9 +1074,44 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_speaker_verify_config(
+    SpeakerVerifyConfig self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_speaker_verify_config(self, serializer);
+  }
+
+  @protected
+  void sse_encode_dropped_segment(
+    DroppedSegment self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_32(self.startMs, serializer);
+    sse_encode_u_32(self.endMs, serializer);
+    sse_encode_u_32(self.durationMs, serializer);
+    sse_encode_f_32(self.pvadScore, serializer);
+    sse_encode_f_32(self.pvadTargetRatio, serializer);
+    sse_encode_f_32(self.speakerCos, serializer);
+  }
+
+  @protected
   void sse_encode_f_32(double self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     serializer.buffer.putFloat32(self);
+  }
+
+  @protected
+  void sse_encode_list_dropped_segment(
+    List<DroppedSegment> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_dropped_segment(item, serializer);
+    }
   }
 
   @protected
@@ -747,6 +1149,26 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_opt_String(String? self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_String(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_pvad_gate_config(
+    PvadGateConfig self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_f_32(self.threshold, serializer);
+    sse_encode_f_32(self.minTargetRatio, serializer);
+  }
+
+  @protected
   void sse_encode_segmenter_config(
     SegmenterConfig self,
     SseSerializer serializer,
@@ -759,6 +1181,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_32(self.minSpeechMs, serializer);
     sse_encode_u_32(self.maxSpeechMs, serializer);
     sse_encode_u_32(self.ringCapacityMs, serializer);
+  }
+
+  @protected
+  void sse_encode_speaker_verify_config(
+    SpeakerVerifyConfig self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_f_32(self.minCosine, serializer);
+    sse_encode_u_32(self.minVerifyMs, serializer);
   }
 
   @protected
@@ -795,6 +1227,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_list_vad_segment(self.segments, serializer);
     sse_encode_u_32(self.bufferedMs, serializer);
     sse_encode_u_32(self.droppedMs, serializer);
+    sse_encode_bool(self.pvadEnabled, serializer);
+    sse_encode_f_32(self.pvadProb, serializer);
+    sse_encode_bool(self.speakerVerifyEnabled, serializer);
+    sse_encode_f_32(self.speakerCos, serializer);
+    sse_encode_list_dropped_segment(self.filtered, serializer);
+    sse_encode_opt_String(self.pvadError, serializer);
   }
 
   @protected
@@ -807,6 +1245,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_32(self.durationMs, serializer);
     sse_encode_bool(self.forcedCut, serializer);
     sse_encode_bool(self.truncated, serializer);
+    sse_encode_f_32(self.pvadScore, serializer);
+    sse_encode_f_32(self.pvadTargetRatio, serializer);
+    sse_encode_f_32(self.speakerCos, serializer);
   }
 
   @protected
@@ -835,6 +1276,10 @@ class SileroVadHandleImpl extends RustOpaque implements SileroVadHandle {
         RustLib.instance.api.rust_arc_decrement_strong_count_SileroVadHandlePtr,
   );
 
+  /// 摘掉门控。摘掉之后所有段都放行。
+  void clearPvad() =>
+      RustLib.instance.api.crateApiVadSileroVadHandleClearPvad(that: this);
+
   /// 喂一块 PCM16LE（长度任意，采样率必须是 `cfg.input_sample_rate`）。
   VadFeedResult feed({required List<int> pcm16Le}) => RustLib.instance.api
       .crateApiVadSileroVadHandleFeed(that: this, pcm16Le: pcm16Le);
@@ -846,6 +1291,49 @@ class SileroVadHandleImpl extends RustOpaque implements SileroVadHandle {
   bool isSpeaking() =>
       RustLib.instance.api.crateApiVadSileroVadHandleIsSpeaking(that: this);
 
+  /// 门控是否生效。推理失败之后会变成 false。
+  bool pvadEnabled() =>
+      RustLib.instance.api.crateApiVadSileroVadHandlePvadEnabled(that: this);
+
+  /// 累计被判定为"不是目标人"而丢掉的段数。
+  int pvadFiltered() =>
+      RustLib.instance.api.crateApiVadSileroVadHandlePvadFiltered(that: this);
+
   void reset() =>
       RustLib.instance.api.crateApiVadSileroVadHandleReset(that: this);
+
+  /// 挂上说话人门控（pVAD）。
+  ///
+  /// `model` 是 `pvad.onnx` 的字节，`spkemb` 是 192 个 little-endian f32
+  /// （768 字节，由网页端或 Python 注册工具生成）。
+  ///
+  /// **必须在开始喂音频之前调完**：这一步要加载 3.9MB 模型并做图优化，
+  /// 是几十到几百毫秒的开销。
+  void setPvad({
+    required List<int> model,
+    required List<int> spkemb,
+    required PvadGateConfig cfg,
+  }) => RustLib.instance.api.crateApiVadSileroVadHandleSetPvad(
+    that: this,
+    model: model,
+    spkemb: spkemb,
+    cfg: cfg,
+  );
+
+  /// 挂上整段声纹比对（ECAPA cosine）。
+  ///
+  /// 和 [`Self::set_pvad`] 可以同时挂：够长的段以 cosine 为准，短段退回 pVAD。
+  /// `model` 是 `ecapa.onnx`（约 81 MiB）的字节，`spkemb` 是网页导出的 768 字节。
+  ///
+  /// **必须在开始喂音频之前调完**：加载 81 MiB 模型是秒级的开销。
+  void setSpeakerVerifier({
+    required List<int> model,
+    required List<int> spkemb,
+    required SpeakerVerifyConfig cfg,
+  }) => RustLib.instance.api.crateApiVadSileroVadHandleSetSpeakerVerifier(
+    that: this,
+    model: model,
+    spkemb: spkemb,
+    cfg: cfg,
+  );
 }

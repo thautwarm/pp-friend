@@ -1,5 +1,7 @@
 import 'dart:typed_data';
 
+import 'package:flutter/services.dart' show rootBundle;
+
 import '../config/assistant_config.dart';
 import '../rust/api/vad.dart';
 import '../rust/frb_generated.dart';
@@ -21,6 +23,11 @@ class SileroSegmenter implements Segmenter {
   final Stopwatch _watch = Stopwatch();
   SegmenterStats _stats = SegmenterStats.idle;
   bool _speaking = false;
+
+  /// 挂门控失败的原因。界面拿它解释"为什么开了没效果"。
+  @override
+  String? get speakerGateError => _speakerGateError;
+  String? _speakerGateError;
 
   /// 构造并加载模型。
   ///
@@ -63,6 +70,7 @@ class SileroSegmenter implements Segmenter {
     Uint8List pcm16le, {
     required void Function() onSpeechStart,
     required void Function(SpeechSegment segment) onUtterance,
+    void Function(FilteredSegment segment)? onFiltered,
   }) {
     if (_handle.isDisposed) return;
 
@@ -84,8 +92,24 @@ class SileroSegmenter implements Segmenter {
           forcedCut: s.forcedCut,
           probability: result.prob,
           truncated: s.truncated,
+          pvadScore: s.pvadScore,
+          pvadTargetRatio: s.pvadTargetRatio,
+          speakerCos: s.speakerCos,
         ),
       );
+    }
+
+    if (onFiltered != null) {
+      for (final s in result.filtered) {
+        onFiltered(FilteredSegment(
+          startMs: s.startMs,
+          endMs: s.endMs,
+          durationMs: s.durationMs,
+          pvadScore: s.pvadScore,
+          pvadTargetRatio: s.pvadTargetRatio,
+          speakerCos: s.speakerCos,
+        ));
+      }
     }
 
     _speaking = result.speaking;
@@ -96,7 +120,59 @@ class SileroSegmenter implements Segmenter {
       droppedMs: result.droppedMs,
       forcedCuts: _handle.forcedCuts(),
       lastFeedMicros: _watch.elapsedMicroseconds,
+      pvadEnabled: result.pvadEnabled,
+      pvadProb: result.pvadProb,
+      pvadFiltered: _handle.pvadFiltered(),
+      speakerVerifyEnabled: result.speakerVerifyEnabled,
+      speakerCos: result.speakerCos,
     );
+  }
+
+  @override
+  Future<bool> attachSpeakerGate(
+    Uint8List spkemb, {
+    required double threshold,
+    required double minTargetRatio,
+    required double minCosine,
+  }) async {
+    if (_handle.isDisposed) return false;
+    try {
+      // 实测 pVAD 的 sigmoid 主要反映"像不像语音"，对"是谁"很弱：
+      // 目标人和家人能一起到 0.9。它的逐帧推理还要一直吃 CPU，所以
+      // 默认判据完全交给 ECAPA cosine，不再挂 pVAD。
+      //
+      // Rust 侧的 setPvad 保留着，想切回去随时可以调；参数 threshold /
+      // minTargetRatio 也还留在签名和配置里，给短段兜底用。
+      //
+      // 这个模型 81 MiB，**故意不缓存**在 Dart 侧：Rust 的 session 已经
+      // 持有权重了，再把字节留一份在 Dart 堆里只是白占 81 MiB。
+      // 每次挂门控重读一次资产，换来的是一次会话只多几百毫秒启动时间。
+      final data = await rootBundle.load('assets/models/ecapa.onnx');
+      final ecapa =
+          data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+      _handle.setSpeakerVerifier(
+        model: ecapa,
+        spkemb: spkemb,
+        cfg: SpeakerVerifyConfig(
+          minCosine: minCosine,
+          // 声纹在 300ms 上已经能分人（干净语音下同一人 cos 0.6 左右，
+          // 不同人 0.1~0.2），而 Silero 本来就把 <300ms 的段丢了。
+          minVerifyMs: 300,
+        ),
+      );
+      _speakerGateError = null;
+      return _handle.pvadEnabled();
+    } catch (e) {
+      _speakerGateError = '$e';
+      return false;
+    }
+  }
+
+  @override
+  void detachSpeakerGate() {
+    if (_handle.isDisposed) return;
+    _handle.clearPvad();
+    _speakerGateError = null;
   }
 
   @override

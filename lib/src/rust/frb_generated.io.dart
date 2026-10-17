@@ -56,10 +56,22 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   bool dco_decode_bool(dynamic raw);
 
   @protected
+  PvadGateConfig dco_decode_box_autoadd_pvad_gate_config(dynamic raw);
+
+  @protected
   SegmenterConfig dco_decode_box_autoadd_segmenter_config(dynamic raw);
 
   @protected
+  SpeakerVerifyConfig dco_decode_box_autoadd_speaker_verify_config(dynamic raw);
+
+  @protected
+  DroppedSegment dco_decode_dropped_segment(dynamic raw);
+
+  @protected
   double dco_decode_f_32(dynamic raw);
+
+  @protected
+  List<DroppedSegment> dco_decode_list_dropped_segment(dynamic raw);
 
   @protected
   List<int> dco_decode_list_prim_u_8_loose(dynamic raw);
@@ -71,7 +83,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<VadSegment> dco_decode_list_vad_segment(dynamic raw);
 
   @protected
+  String? dco_decode_opt_String(dynamic raw);
+
+  @protected
+  PvadGateConfig dco_decode_pvad_gate_config(dynamic raw);
+
+  @protected
   SegmenterConfig dco_decode_segmenter_config(dynamic raw);
+
+  @protected
+  SpeakerVerifyConfig dco_decode_speaker_verify_config(dynamic raw);
 
   @protected
   int dco_decode_u_32(dynamic raw);
@@ -122,12 +143,30 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   bool sse_decode_bool(SseDeserializer deserializer);
 
   @protected
+  PvadGateConfig sse_decode_box_autoadd_pvad_gate_config(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   SegmenterConfig sse_decode_box_autoadd_segmenter_config(
     SseDeserializer deserializer,
   );
 
   @protected
+  SpeakerVerifyConfig sse_decode_box_autoadd_speaker_verify_config(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  DroppedSegment sse_decode_dropped_segment(SseDeserializer deserializer);
+
+  @protected
   double sse_decode_f_32(SseDeserializer deserializer);
+
+  @protected
+  List<DroppedSegment> sse_decode_list_dropped_segment(
+    SseDeserializer deserializer,
+  );
 
   @protected
   List<int> sse_decode_list_prim_u_8_loose(SseDeserializer deserializer);
@@ -139,7 +178,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<VadSegment> sse_decode_list_vad_segment(SseDeserializer deserializer);
 
   @protected
+  String? sse_decode_opt_String(SseDeserializer deserializer);
+
+  @protected
+  PvadGateConfig sse_decode_pvad_gate_config(SseDeserializer deserializer);
+
+  @protected
   SegmenterConfig sse_decode_segmenter_config(SseDeserializer deserializer);
+
+  @protected
+  SpeakerVerifyConfig sse_decode_speaker_verify_config(
+    SseDeserializer deserializer,
+  );
 
   @protected
   int sse_decode_u_32(SseDeserializer deserializer);
@@ -197,13 +247,37 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_bool(bool self, SseSerializer serializer);
 
   @protected
+  void sse_encode_box_autoadd_pvad_gate_config(
+    PvadGateConfig self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_segmenter_config(
     SegmenterConfig self,
     SseSerializer serializer,
   );
 
   @protected
+  void sse_encode_box_autoadd_speaker_verify_config(
+    SpeakerVerifyConfig self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_dropped_segment(
+    DroppedSegment self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_f_32(double self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_dropped_segment(
+    List<DroppedSegment> self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_list_prim_u_8_loose(List<int> self, SseSerializer serializer);
@@ -221,8 +295,23 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_opt_String(String? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_pvad_gate_config(
+    PvadGateConfig self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_segmenter_config(
     SegmenterConfig self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_speaker_verify_config(
+    SpeakerVerifyConfig self,
     SseSerializer serializer,
   );
 

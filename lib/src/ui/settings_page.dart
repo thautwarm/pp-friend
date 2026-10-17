@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../config/assistant_config.dart';
@@ -50,6 +51,7 @@ class _SettingsPageState extends State<SettingsPage>
   late final TextEditingController _vadSpeechPadMs;
   late final TextEditingController _vadMinSpeechMs;
   late final TextEditingController _vadMaxSpeechS;
+  late final TextEditingController _pvadMinCosine;
 
   @override
   void initState() {
@@ -64,6 +66,8 @@ class _SettingsPageState extends State<SettingsPage>
     _vadMinSpeechMs =
         TextEditingController(text: config.vadMinSpeechMs.toString());
     _vadMaxSpeechS = TextEditingController(text: config.vadMaxSpeechS.toString());
+    _pvadMinCosine =
+        TextEditingController(text: config.pvadMinCosine.toString());
     _selectedId = config.focusedProfileId;
     WidgetsBinding.instance.addPostFrameCallback((_) => _revealSelected());
   }
@@ -77,6 +81,7 @@ class _SettingsPageState extends State<SettingsPage>
     _vadSpeechPadMs.dispose();
     _vadMinSpeechMs.dispose();
     _vadMaxSpeechS.dispose();
+    _pvadMinCosine.dispose();
     super.dispose();
   }
 
@@ -144,7 +149,31 @@ class _SettingsPageState extends State<SettingsPage>
       vadSpeechPadMs: _int(_vadSpeechPadMs, base.vadSpeechPadMs),
       vadMinSpeechMs: _int(_vadMinSpeechMs, base.vadMinSpeechMs),
       vadMaxSpeechS: _int(_vadMaxSpeechS, base.vadMaxSpeechS).clamp(1, 600),
+      pvadMinCosine:
+          _double(_pvadMinCosine, base.pvadMinCosine).clamp(0.1, 0.9),
     ));
+  }
+
+  /// 从文件里导入声纹。只认 768 字节的 `spkemb.f32`。
+  Future<void> _importVoiceprint() async {
+    // 不按扩展名过滤：Android 对 `.f32` 没有标准 MIME，按 custom 过滤
+    // 反而会让文件在列表里变灰。字节数校验比扩展名可靠。
+    final file = await FilePicker.pickFile();
+    if (file == null) return;
+    final bytes = await file.readAsBytes();
+    try {
+      await widget.controller.importVoiceprint(bytes);
+      _toast('声纹已导入');
+    } on FormatException catch (e) {
+      _toast('这个文件不是声纹：${e.message}');
+    } catch (e) {
+      _toast('导入失败：$e');
+    }
+  }
+
+  Future<void> _removeVoiceprint() async {
+    await widget.controller.removeVoiceprint();
+    _toast('声纹已删除');
   }
 
   /// 换到另一个档案：先把当前的改动落盘，再切。
@@ -379,6 +408,62 @@ class _SettingsPageState extends State<SettingsPage>
               label: '最长一句 (s)',
               hint: '60 —— 说超过就强制切开，避免一直说不完',
               keyboardType: TextInputType.number,
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        SettingsSection(
+          title: '说话人识别',
+          children: [
+            Text(
+              '只把注册过的那个人的声音上传给 brain。家人说话会被整段丢掉：'
+              '不上传，也不会进消息流，agent 的上下文里不会混进别人的话。\n\n'
+              '声纹由 tools/voiceprint 那个网页生成（在本机算，音频不外传）。'
+              '把导出的 spkemb.f32 拷到手机上，在这里导入。\n\n'
+              '用的是 pVAD（FireRedChat，Apache-2.0）加一道 ECAPA 声纹比对：'
+              '正常长度的句子看两段声音的相似度，太短的句子才退回 pVAD。'
+              '它不转写、也不分离重叠的说话声 —— 你和别人同时说，还是会混进去。',
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 12),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              value: widget.controller.config.pvadEnabled,
+              onChanged: (enabled) => widget.controller.updateConfig(
+                widget.controller.config.copyWith(pvadEnabled: enabled),
+              ),
+              title: const Text('只上传本人的声音'),
+              subtitle: Text(
+                widget.controller.hasVoiceprint
+                    ? '已导入声纹。关掉它，所有人说的话都会上传。'
+                    : '还没导入声纹 —— 导入之后才会生效。',
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: _importVoiceprint,
+                  icon: const Icon(Icons.file_open_outlined),
+                  label: Text(widget.controller.hasVoiceprint ? '重新导入声纹' : '导入声纹'),
+                ),
+                if (widget.controller.hasVoiceprint)
+                  TextButton.icon(
+                    onPressed: _removeVoiceprint,
+                    icon: const Icon(Icons.delete_outline),
+                    label: const Text('删除声纹'),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            SettingsTextField(
+              controller: _pvadMinCosine,
+              label: '声纹相似度阈值',
+              hint: '0.40 —— 同一个人通常 0.5 以上，不同人 0.3 以下。调高更严',
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
             ),
           ],
         ),

@@ -12,6 +12,9 @@ class SpeechSegment {
     this.forcedCut = false,
     this.probability = 0,
     this.truncated = false,
+    this.pvadScore = -1,
+    this.pvadTargetRatio = -1,
+    this.speakerCos = -1,
   });
 
   /// 单声道 PCM16LE。**采样率以 [sampleRate] 为准，不是采集率。**
@@ -30,6 +33,37 @@ class SpeechSegment {
 
   /// 开头被环形缓冲挤掉了。正常恒为 false，出现就说明缓冲配小了。
   final bool truncated;
+
+  /// 说话人门控给出的段内平均概率。没挂声纹时是 -1。
+  final double pvadScore;
+
+  /// 段内被判为目标人的帧占比，0~1。没挂声纹时是 -1。
+  final double pvadTargetRatio;
+
+  /// 这一段和注册声纹的 cosine。没比或段太短时是 -1。
+  final double speakerCos;
+}
+
+/// 被说话人门控丢掉的一段。
+///
+/// **没有音频**：它在 Rust 侧就被拦下了，一个字节都没上来到 Dart。
+/// 这里只留元数据，给调试面板看"刚才谁说话被滤掉了"。
+class FilteredSegment {
+  const FilteredSegment({
+    required this.startMs,
+    required this.endMs,
+    required this.durationMs,
+    required this.pvadScore,
+    required this.pvadTargetRatio,
+    this.speakerCos = -1,
+  });
+
+  final int startMs;
+  final int endMs;
+  final int durationMs;
+  final double pvadScore;
+  final double pvadTargetRatio;
+  final double speakerCos;
 }
 
 /// 一次 feed 之后能观察到的状态。调试面板全靠它。
@@ -41,6 +75,11 @@ class SegmenterStats {
     this.droppedMs = 0,
     this.forcedCuts = 0,
     this.lastFeedMicros = 0,
+    this.pvadEnabled = false,
+    this.pvadProb = 0,
+    this.pvadFiltered = 0,
+    this.speakerVerifyEnabled = false,
+    this.speakerCos = -1,
   });
 
   /// 当前处于"正在说话"。
@@ -60,6 +99,21 @@ class SegmenterStats {
 
   /// 最近一次 feed 的耗时（微秒）。p99 超过 3ms 就得考虑挪出 main isolate。
   final int lastFeedMicros;
+
+  /// 说话人门控是否生效。
+  final bool pvadEnabled;
+
+  /// 最近一帧的 pVAD 平滑概率。
+  final double pvadProb;
+
+  /// 累计被判定为"不是本人"而丢掉的段数。
+  final int pvadFiltered;
+
+  /// 整段声纹比对（ECAPA）是否挂上了。
+  final bool speakerVerifyEnabled;
+
+  /// 最近一段的声纹 cosine。还没比过时是 -1。
+  final double speakerCos;
 
   static const SegmenterStats idle = SegmenterStats();
 }
@@ -81,7 +135,26 @@ abstract class Segmenter {
     Uint8List pcm16le, {
     required void Function() onSpeechStart,
     required void Function(SpeechSegment segment) onUtterance,
+    void Function(FilteredSegment segment)? onFiltered,
   });
+
+  /// 挂上说话人门控（pVAD）。
+  ///
+  /// `spkemb` 是 768 字节的声纹文件内容。返回 false 表示没挂上
+  /// （模型资产缺失、声纹非法、时机不对）—— **断句本身不受影响**，
+  /// 调用方应当把原因显示出来，而不是假装开启了。
+  Future<bool> attachSpeakerGate(
+    Uint8List spkemb, {
+    required double threshold,
+    required double minTargetRatio,
+    required double minCosine,
+  });
+
+  /// 摘掉门控。所有段恢复放行。
+  void detachSpeakerGate();
+
+  /// 上一次 `attachSpeakerGate` 失败的原因。成功时是 null。
+  String? get speakerGateError;
 
   SegmenterStats get stats;
 
