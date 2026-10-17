@@ -697,24 +697,7 @@ mod tests {
         assert_eq!(s.frames as usize, total / FRAME_SAMPLES);
     }
 
-    #[test]
-    fn real_pvad_model_loads_and_keeps_frame_state() {
-        // 模型是仓库里的资产，不是代码生成的；路径相对 crate 根。
-        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../assets/models/pvad.onnx");
-        let bytes = std::fs::read(path).expect("assets/models/pvad.onnx 应该在仓库里");
-        let mut emb = vec![0.0f32; EMB_DIM];
-        emb[0] = 1.0;
-        let mut scorer = PvadScorer::new(&bytes, &emb).expect("真模型应该能加载");
-
-        let mut probs = Vec::new();
-        scorer
-            .push(&vec![0.0f32; 1600], &mut |p| probs.push(p))
-            .unwrap();
-        assert_eq!(probs.len(), 10, "1600 采样 = 100ms = 10 帧");
-        assert!(probs[0] > 0.0 && probs[0] < 0.2, "零输入 {}", probs[0]);
-        // 状态确实在推进：第二帧和第一帧不会逐位相同。
-        assert_ne!(probs[0], probs[1]);
-    }
+    // 真模型测试已删除：pVAD 不再参与判定，pvad.onnx 也不再随仓库分发。
 
     #[test]
     fn a_short_first_chunk_does_not_shift_frame_alignment() {

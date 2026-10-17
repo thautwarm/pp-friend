@@ -67,10 +67,8 @@ flutter:
   uses-material-design: true
 
   assets:
-    # 个性化 VAD（说话人识别）。3.9MB，Apache-2.0，
-    # 来自 FireRedTeam/FireRedChat-pvad。放在资产里而不是 include_bytes!，
-    # 换模型时不用重编 Rust 动态库。
-    - assets/models/pvad.onnx
+    # 说话人声纹比对用的 ECAPA（int8，约 22MB）。放在资产里而不是
+    # include_bytes!，换模型时不用重编 Rust 动态库。
     - assets/models/ecapa.onnx
 
   # An image asset can refer to one or more resolution-specific "variants", see
