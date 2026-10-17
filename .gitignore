@@ -57,6 +57,14 @@ app.*.map.json
 .env
 .env.*
 
+# 声纹和录音 —— 生物特征，比密钥更不该入库。
+# spkemb.f32 是 768 字节的说话人 embedding，拿到它就能冒充本人通过门控；
+# 原始录音同理。这些只该待在应用私有目录或注册页的标签页里。
+*.f32
+*.wav
+*.m4a
+*.mp3
+
 # Rust
 /rust/target/
 # 注意：android/app/src/main/jniLibs/ 是**入库**的，里面两个 .so：
