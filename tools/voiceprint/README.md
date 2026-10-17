@@ -1,6 +1,6 @@
-# 声纹注册工具（pVAD）
+# 声纹注册工具（ECAPA）
 
-给个性化 VAD（pVAD）注册目标说话人的声纹。浏览器里解码音频、算 192 维
+给说话人门控注册目标说话人的声纹。浏览器里解码音频、算 192 维
 ECAPA-TDNN embedding，导出成 App 能直接读的 `spkemb.f32`。
 
 **全部计算都在本机浏览器内完成，音频不会上传，也不联网。**
@@ -13,12 +13,14 @@ onnxruntime-web 1.30.0 的 JS/WASM 已经放在 `vendor/onnxruntime-web/dist/`
 ```
 tools/voiceprint/
 ├── export_ecapa_onnx.py          # 一次性导出 + 强制验证脚本
+├── quantize_ecapa_int8.py        # 导出 int8，给 App 内置用
 ├── index.html                    # 单文件页面（内联 CSS/JS）
 ├── vendor/onnxruntime-web/dist/  # 本地 ORT 运行时（约 14 MiB，入库）
 ├── README.md
 ├── .gitignore                    # 忽略 .venv / *.ckpt / *.onnx / 音频
 ├── models/
-│   ├── ecapa.onnx                # 导出产物，约 81 MiB，不入库
+│   ├── ecapa.onnx                # 导出产物，约 81 MiB，不入库（注册页用）
+│   ├── ecapa-int8.onnx           # 量化产物，约 23 MiB，不入库（App 用）
 │   └── spkrec-ecapa-voxceleb/    # 原始 SpeechBrain 模型，ckpt 不入库
 │       ├── hyperparams.yaml
 │       ├── embedding_model.ckpt
@@ -138,6 +140,33 @@ data）。动态轴：输入 batch、time；输出 batch。
 * **没有 `wav_lens` 输入。** 不要把不同长度的语音 zero-pad 成一个 batch：
   padding 会参与句级均值归一化和注意力池化。请逐条推理，或只把等长片段
   组成 batch。
+
+## int8 量化（App 内置的那份）
+
+注册页仍然用 fp32 模型（本机算，体积不影响 App）。打进 APK 的是量化版：
+
+```bash
+# 校准音频：16 kHz 单声道 wav，几段正常说话即可
+mkdir -p /tmp/ecapa_calib
+say -v Tingting -o /tmp/a.aiff "今天天气不错，我们出去走走吧。"
+afconvert -f WAVE -d LEI16@16000 -c 1 /tmp/a.aiff /tmp/ecapa_calib/a.wav
+
+cd tools/voiceprint
+.venv/bin/python quantize_ecapa_int8.py --calib-dir /tmp/ecapa_calib
+# 产物: models/ecapa-int8.onnx，拷到 assets/models/ecapa.onnx
+```
+
+脚本会做两处必要的改写：把末尾按 batch 分支的 `If` 换成 `Squeeze`，
+否则静态量化生成出来的模型 ORT 加载不了；跳过 Fbank/STFT 前端，
+前端量化后会出现 NaN。实测：
+
+| | 体积 | 0.3 s | 3 s | embedding cosine |
+|---|---:|---:|---:|---:|
+| fp32 | 84.8 MB | 10.2 ms | 37.3 ms | — |
+| int8 | 23.1 MB | 2.9 ms | 17.6 ms | min 0.986 / mean 0.992 |
+
+用 fp32 声纹注册、int8 探针比对，同人 cosine 平均只挪 -0.006，所以
+旧声纹不用重新录。
 * **`emb` 没有归一化**，L2 范数通常在 300–500。页面会先对多窗结果求平均，
   再做 L2 归一化后导出。Rust 侧 pVAD（`rust/src/pvad.rs`）读取文件后还会
   防御性再归一化一次，所以两种顺序都安全。

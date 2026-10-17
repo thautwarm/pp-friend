@@ -170,6 +170,9 @@ STT 吃 16k，TTS 出 24k。
 
 ### A7. 说话人识别（ECAPA 声纹）—— 已实现
 
+实现链路、量化原理和实测数字见 [`speaker-verification.md`](speaker-verification.md)，
+本节只留结论。
+
 目标：**只上传本人的声音**，这样用户不用频繁闭麦，家人也不必担心
 随口说的话被卷进 agent 的上下文。
 
@@ -183,13 +186,17 @@ STT 吃 16k，TTS 出 24k。
   低于 `pvadMinCosine`（默认 0.4）就**整段丢掉** —— 不上传、不进消息流。
   段中间的停顿是纯静音，混进去会稀释 embedding，说得越长、停顿越多，
   本人的 cosine 反而越低，所以必须跳过。
-- 短段：不足 0.3 秒的语音不做比对（embedding 不稳），挂了 pVAD 时退回
+- 短段：不足 0.3 秒的语音不做比对（embedding 不稳），有 pVAD 时退回
   它的逐帧占比；当前 Dart 侧只挂 ECAPA，没有 pVAD 可比时直接放行。
-  推理失败也只摘掉比对器，不影响断句和上传。
+  推理失败也只摘掉比对器，不影响断句和上传。`pvad.onnx` 已经不再随
+  仓库分发，Rust 里的 pVAD 路径保留着，但默认没有模型可用。
 - 声纹：192 维，L2 归一化，768 字节的 `spkemb.f32`。注册网页和手机
   必须用同一个 checkpoint（SpeechBrain `spkrec-ecapa-voxceleb`），
   换模型之后旧声纹就不能再比了。注册入口是 `tools/voiceprint` 的
   纯 JS 网页（onnxruntime-web，音频不出本机），设置页用文件选择器导入。
+- 模型：注册页用 fp32（跑在本机），APK 用同一个 checkpoint 的 int8
+  （23 MiB）。实测 embedding cosine min 0.986 / mean 0.992，同人判定
+  分只挪 -0.006，旧声纹可以直接用。
 - 存储：声纹在应用私有目录 `voiceprint/spkemb.f32`，可随时删除。
 - 已知限制：
   - 判定是**前缀式**的：最多只看这一段开头的 3 秒。你先说、家人紧接着

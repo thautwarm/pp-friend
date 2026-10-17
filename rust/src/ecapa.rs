@@ -19,6 +19,14 @@ use crate::pvad::EMB_DIM;
 /// 再长只会线性增加延迟。段中间的停顿也不该拖慢判定的时间点。
 pub const MAX_VERIFY_SAMPLES: usize = 3 * 16_000;
 
+/// 单次推理用几路线程。
+///
+/// 一开始写的是 1：ECAPA 每句话只跑一次，不想长期占核。但实测手机上
+/// 3 秒音频单线程要 120ms，放开到 4 路之后才能压到 100ms 以内。推理
+/// 只持续几十毫秒，而且发生在 VAD 刚关句、上传还没开始的时候，多占
+/// 这几个核不会影响录音。
+const INFER_THREADS: usize = 4;
+
 pub struct EcapaVerifier {
     session: Session,
     input: String,
@@ -32,7 +40,7 @@ impl EcapaVerifier {
     pub fn new(model: &[u8], spkemb: &[f32]) -> Result<Self, String> {
         let session = Session::builder()
             .map_err(|e| format!("ORT builder: {e}"))?
-            .with_intra_threads(1)
+            .with_intra_threads(INFER_THREADS)
             .map_err(|e| format!("ORT 线程数: {e}"))?
             .commit_from_memory(model)
             .map_err(|e| format!("加载 ecapa.onnx: {e}"))?;

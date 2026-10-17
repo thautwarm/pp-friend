@@ -33,7 +33,7 @@
 |---|---|
 | UI / 业务 | Flutter（Dart 3.13） |
 | 本地断句 | Rust + Silero VAD，flutter_rust_bridge 2.13 |
-| 说话人门控 | Rust + ECAPA 声纹余弦（ONNX，84.8MB）；声纹由 `tools/voiceprint` 网页生成 |
+| 说话人门控 | Rust + ECAPA 声纹余弦（int8 ONNX，23MB）；声纹由 `tools/voiceprint` 网页生成 |
 | 音频引擎 | Android 原生（Kotlin）：AudioRecord / AudioTrack / AEC |
 | 上行编码 | Ogg Opus 16kHz（MediaCodec + MediaMuxer） |
 | 下行解码 | Ogg Opus 24kHz（MediaExtractor + MediaCodec）→ 重采样到 16k |
@@ -71,9 +71,9 @@ tools/mock_brain.py
 
 ```
 lib/            Dart 侧：配置、会话、存储、UI
-rust/           本地断句（Silero VAD）、说话人门控（ECAPA/pVAD）与 frb 绑定
+rust/           本地断句（Silero VAD）、说话人门控（ECAPA）与 frb 绑定
 android/        原生音频引擎、前台服务、通知
-assets/         模型资产（pvad.onnx、ecapa.onnx）
+assets/         模型资产（ecapa.onnx，int8）
 tools/          构建脚本、假 brain、声纹注册网页、图标生成
 docs/           设计与协议文档
 test/           单元测试
