@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../../../l10n/app_localizations.dart';
 import '../../voice/voice_engine.dart';
 
 /// 双电平条。
@@ -9,11 +10,7 @@ import '../../voice/voice_engine.dart';
 /// 两条一起看才能判断 AEC 有没有生效：
 /// 播测试音时麦克风条应该接近静默；你一说话它应该明显抬升。
 class LevelMeter extends StatelessWidget {
-  const LevelMeter({
-    super.key,
-    required this.levels,
-    this.thresholdDb,
-  });
+  const LevelMeter({super.key, required this.levels, this.thresholdDb});
 
   final ValueListenable<AudioLevels> levels;
 
@@ -31,12 +28,13 @@ class LevelMeter extends StatelessWidget {
       valueListenable: levels,
       builder: (context, value, _) {
         final theme = Theme.of(context);
+        final l10n = AppLocalizations.of(context);
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _bar(
               context: context,
-              label: '麦克风 (AEC 后)',
+              label: l10n.micAfterAec,
               db: value.micDb,
               color: theme.colorScheme.primary,
               showThreshold: thresholdDb != null,
@@ -44,7 +42,7 @@ class LevelMeter extends StatelessWidget {
             const SizedBox(height: 12),
             _bar(
               context: context,
-              label: '播放输出',
+              label: l10n.playbackOutput,
               db: value.playbackDb,
               color: theme.colorScheme.tertiary,
               showThreshold: false,
@@ -74,10 +72,14 @@ class LevelMeter extends StatelessWidget {
           children: [
             Text(label, style: theme.textTheme.labelMedium),
             Text(
-              silent ? '静默' : '${db.toStringAsFixed(1)} dBFS',
+              silent
+                  ? AppLocalizations.of(context).silent
+                  : '${db.toStringAsFixed(1)} dBFS',
               style: theme.textTheme.labelMedium?.copyWith(
                 fontFeatures: const [FontFeature.tabularFigures()],
-                color: silent ? theme.colorScheme.outline : theme.colorScheme.onSurface,
+                color: silent
+                    ? theme.colorScheme.outline
+                    : theme.colorScheme.onSurface,
               ),
             ),
           ],
@@ -105,7 +107,10 @@ class LevelMeter extends StatelessWidget {
                   ),
                   if (showThreshold)
                     Positioned(
-                      left: (width * _normalize(thresholdDb!)).clamp(0.0, width - 2),
+                      left: (width * _normalize(thresholdDb!)).clamp(
+                        0.0,
+                        width - 2,
+                      ),
                       child: Container(
                         width: 2,
                         height: 14,

@@ -6,13 +6,16 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pp_friend/src/ui/widgets/voice_orb.dart';
 import 'package:pp_friend/src/voice/voice_engine.dart';
 
+import 'support/test_app.dart';
+
 /// 1x1 的透明 PNG。内容无所谓 —— 这几条用例关心的是它**被怎么画**，
 /// 不是它画出来长什么样。
-final ImageProvider _png =
-    MemoryImage(base64Decode(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQAB'
-  'DQottAAAAABJRU5ErkJggg==',
-));
+final ImageProvider _png = MemoryImage(
+  base64Decode(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQAB'
+    'DQottAAAAABJRU5ErkJggg==',
+  ),
+);
 
 const double _scale = 0.62;
 
@@ -22,8 +25,8 @@ Future<void> _pump(
   OrbState state = OrbState.listening,
 }) async {
   await tester.pumpWidget(
-    MaterialApp(
-      home: Scaffold(
+    testApp(
+      Scaffold(
         body: Center(
           child: VoiceOrb(
             levels: ValueNotifier(
@@ -88,10 +91,12 @@ void main() {
   testWidgets('头像是半透明压上去的，透得出底下的主题色', (tester) async {
     await _pump(tester, avatar: _png);
 
-    expect(_avatarOpacity(tester), lessThan(1.0),
-        reason: '全不透明就是一张贴上去的贴纸');
-    expect(_avatarOpacity(tester), greaterThan(0.5),
-        reason: '太透就看不清脸了，那还不如不要头像');
+    expect(_avatarOpacity(tester), lessThan(1.0), reason: '全不透明就是一张贴上去的贴纸');
+    expect(
+      _avatarOpacity(tester),
+      greaterThan(0.5),
+      reason: '太透就看不清脸了，那还不如不要头像',
+    );
   });
 
   testWidgets('开着还是关着，带着头像也分得出来', (tester) async {
@@ -112,8 +117,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 250));
     final bright = _avatarOpacity(tester);
 
-    expect(bright, greaterThan(dimmed * 2),
-        reason: '开了还这么暗的话，用户看不出对话起没起来');
+    expect(bright, greaterThan(dimmed * 2), reason: '开了还这么暗的话，用户看不出对话起没起来');
     expect(greyscale, findsNothing, reason: '开着的时候头像得是有颜色的');
   });
 

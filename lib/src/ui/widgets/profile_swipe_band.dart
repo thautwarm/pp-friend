@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../../../l10n/app_localizations.dart';
 import '../../config/profile.dart';
 import '../../voice/voice_engine.dart';
 import 'voice_orb.dart';
@@ -60,8 +61,9 @@ class _ProfileSwipeBandState extends State<ProfileSwipeBand> {
   late int _index;
 
   /// 旁边那些圆用的静默电平。复用一个，别在 build 里现造。
-  final ValueNotifier<AudioLevels> _idle =
-      ValueNotifier(const AudioLevels(micDb: -120, playbackDb: -120));
+  final ValueNotifier<AudioLevels> _idle = ValueNotifier(
+    const AudioLevels(micDb: -120, playbackDb: -120),
+  );
 
   /// 正在按 widget 的焦点被动翻页，目标是这一页。null 表示没在被动翻页。
   ///
@@ -180,18 +182,23 @@ class _ProfileSwipeBandState extends State<ProfileSwipeBand> {
                 if (id == widget.focusedId) return;
                 widget.onFocus(id);
               },
-              itemBuilder: (context, index) =>
-                  _orb(widget.profiles[index], isFocused: index == _index),
+              itemBuilder: (context, index) => _orb(
+                context,
+                widget.profiles[index],
+                isFocused: index == _index,
+              ),
             ),
           ),
           if (widget.profiles.length > 1) ...[
             _arrow(
+              context,
               Icons.chevron_left_rounded,
               atStart: true,
               shown: _index > 0,
               onTap: () => _go(-1),
             ),
             _arrow(
+              context,
               Icons.chevron_right_rounded,
               atStart: false,
               shown: _index < widget.profiles.length - 1,
@@ -219,15 +226,17 @@ class _ProfileSwipeBandState extends State<ProfileSwipeBand> {
             ),
             const SizedBox(height: 8),
             Text(
-              '没有启用的档案',
-              style: theme.textTheme.titleSmall
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              AppLocalizations.of(context).noEnabledProfiles,
+              style: theme.textTheme.titleSmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
             ),
             const SizedBox(height: 2),
             Text(
-              '去配置里新建一个，或者把原来那个打开',
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              AppLocalizations.of(context).noEnabledProfilesBody,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
             ),
           ],
         ),
@@ -235,7 +244,11 @@ class _ProfileSwipeBandState extends State<ProfileSwipeBand> {
     );
   }
 
-  Widget _orb(Profile profile, {required bool isFocused}) {
+  Widget _orb(
+    BuildContext context,
+    Profile profile, {
+    required bool isFocused,
+  }) {
     return Center(
       child: Opacity(
         opacity: isFocused ? 1 : 0.55,
@@ -251,9 +264,11 @@ class _ProfileSwipeBandState extends State<ProfileSwipeBand> {
           // 旁边的圆的动作是"切过去"，不是开始对话。交给 VoiceOrb 默认那套
           // （按 state 念）会说成"开始对话，按钮"—— 读屏用户按下去，
           // 档案被切走了，而它以为刚开始说话。
-          semanticLabel: isFocused ? null : '切到${profile.displayName}',
-          onTap:
-              isFocused ? widget.onTap : () => widget.onFocus(profile.id),
+          semanticLabel: isFocused
+              ? null
+              : AppLocalizations.of(context)
+                    .switchToProfile(profile.displayName),
+          onTap: isFocused ? widget.onTap : () => widget.onFocus(profile.id),
         ),
       ),
     );
@@ -261,6 +276,7 @@ class _ProfileSwipeBandState extends State<ProfileSwipeBand> {
 
   /// 左右边缘的箭头。到头了就淡出，提示"这边没有了"。
   Widget _arrow(
+    BuildContext context,
     IconData icon, {
     required bool atStart,
     required bool shown,
@@ -275,7 +291,9 @@ class _ProfileSwipeBandState extends State<ProfileSwipeBand> {
           // 淡出之后还要能接收点击的话，用户会点到看不见的东西
           onPressed: shown ? onTap : null,
           icon: Icon(icon),
-          tooltip: atStart ? '上一个档案' : '下一个档案',
+          tooltip: atStart
+              ? AppLocalizations.of(context).previousProfile
+              : AppLocalizations.of(context).nextProfile,
         ),
       ),
     );

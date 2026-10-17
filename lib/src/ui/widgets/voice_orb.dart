@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../../../l10n/app_localizations.dart';
 import '../../voice/voice_engine.dart';
 
 /// 主界面唯一的那个按钮。
@@ -69,7 +70,8 @@ class VoiceOrb extends StatefulWidget {
   State<VoiceOrb> createState() => _VoiceOrbState();
 }
 
-class _VoiceOrbState extends State<VoiceOrb> with SingleTickerProviderStateMixin {
+class _VoiceOrbState extends State<VoiceOrb>
+    with SingleTickerProviderStateMixin {
   late final AnimationController _breath;
 
   @override
@@ -98,8 +100,10 @@ class _VoiceOrbState extends State<VoiceOrb> with SingleTickerProviderStateMixin
           animation: _breath,
           builder: (context, _) {
             final micLevel =
-                ((value.micDb - VoiceOrb._floorDb) / -VoiceOrb._floorDb)
-                    .clamp(0.0, 1.0);
+                ((value.micDb - VoiceOrb._floorDb) / -VoiceOrb._floorDb).clamp(
+                  0.0,
+                  1.0,
+                );
 
             // 静音时也要有一点动静，否则用户分不清"在听"和"麦克风死了"。
             // 所以取电平与呼吸包络的较大者：有声音就跟着声音动，
@@ -120,13 +124,13 @@ class _VoiceOrbState extends State<VoiceOrb> with SingleTickerProviderStateMixin
               // 没开始对话时不带彩头：那时它是一个"待按"的按钮，
               // 不是某个身份的标志。启动中同理 —— 还没开始跑。
               OrbState.idle ||
-              OrbState.starting =>
-                theme.colorScheme.surfaceContainerHighest,
+              OrbState.starting => theme.colorScheme.surfaceContainerHighest,
               OrbState.listening => accent ?? theme.colorScheme.primary,
               // 和"正在听"拉开距离，否则两个状态一个色，看不出在动。
-              OrbState.speaking => accent == null
-                  ? theme.colorScheme.tertiary
-                  : Color.lerp(accent, theme.colorScheme.tertiary, 0.45)!,
+              OrbState.speaking =>
+                accent == null
+                    ? theme.colorScheme.tertiary
+                    : Color.lerp(accent, theme.colorScheme.tertiary, 0.45)!,
             };
             final iconColor = switch (widget.state) {
               OrbState.idle => theme.colorScheme.onSurfaceVariant,
@@ -137,12 +141,15 @@ class _VoiceOrbState extends State<VoiceOrb> with SingleTickerProviderStateMixin
 
             return Semantics(
               button: true,
-              label: widget.semanticLabel ??
+              label:
+                  widget.semanticLabel ??
                   switch (widget.state) {
-                    OrbState.idle => '开始对话',
-                    OrbState.starting => '正在启动',
-                    OrbState.listening => '结束对话',
-                    OrbState.speaking => '结束对话',
+                    OrbState.idle => AppLocalizations.of(context).orbStart,
+                    OrbState.starting => AppLocalizations.of(
+                      context,
+                    ).orbStarting,
+                    OrbState.listening => AppLocalizations.of(context).orbEnd,
+                    OrbState.speaking => AppLocalizations.of(context).orbEnd,
                   },
               child: GestureDetector(
                 onTap: widget.enabled ? widget.onTap : null,
@@ -198,7 +205,9 @@ class _VoiceOrbState extends State<VoiceOrb> with SingleTickerProviderStateMixin
                                     // 所以头像自己得跟着状态变：关着的时候又暗
                                     // 又灰（一眼是灭的），开着才是正常的彩色。
                                     child: AnimatedOpacity(
-                                      duration: const Duration(milliseconds: 220),
+                                      duration: const Duration(
+                                        milliseconds: 220,
+                                      ),
                                       opacity: active ? 0.85 : 0.3,
                                       child: active
                                           ? _avatar(iconColor)
@@ -294,8 +303,8 @@ class _VoiceOrbState extends State<VoiceOrb> with SingleTickerProviderStateMixin
   /// 按背景色的明暗挑前景色，保证图标在任何主题色下都看得见。
   static Color _onColor(Color background) =>
       ThemeData.estimateBrightnessForColor(background) == Brightness.dark
-          ? Colors.white
-          : Colors.black87;
+      ? Colors.white
+      : Colors.black87;
 
   Widget _ring(Color color, double drive, double opacity, double maxGrowth) {
     return Container(

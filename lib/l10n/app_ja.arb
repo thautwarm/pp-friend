@@ -1,0 +1,239 @@
+{
+  "@@locale": "ja",
+  "save": "保存",
+  "saved": "保存しました",
+  "delete": "削除",
+  "clear": "クリア",
+  "cancel": "キャンセル",
+  "settingsTitle": "設定",
+  "tabProfiles": "プロフィール",
+  "tabGeneral": "一般",
+  "languageSection": "言語",
+  "languageFollowSystem": "システムに従う",
+  "languageChinese": "中文",
+  "languageEnglish": "English",
+  "languageJapanese": "日本語",
+  "languageChanged": "表示言語を切り替えました",
+  "saveFailed": "保存できませんでした：{error}",
+  "@saveFailed": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+  "profileGoneUnsaved": "このプロフィールはもう存在しません。変更は保存されていません",
+  "noAppToOpenPage": "ページを開けるアプリが見つかりません",
+  "openPageFailed": "ページを開けませんでした：{error}",
+  "@openPageFailed": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+  "voiceprintImported": "声紋をインポートしました",
+  "notVoiceprint": "このファイルは声紋ではありません：{message}",
+  "@notVoiceprint": {
+    "placeholders": {
+      "message": {"type": "String"}
+    }
+  },
+  "importFailed": "インポートに失敗しました：{error}",
+  "@importFailed": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+  "voiceprintRemoved": "声紋を削除しました",
+  "saveFailedBeforeSwitch": "保存できませんでした。切り替える前に確認してください：{error}",
+  "@saveFailedBeforeSwitch": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+  "saveFailedBeforeAdd": "保存できませんでした。新規作成する前に確認してください：{error}",
+  "@saveFailedBeforeAdd": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+  "newProfile": "新しいプロフィール",
+  "newProfileTooltip": "プロフィールを新規作成",
+  "profileDisabled": "オフ",
+  "localSegmentation": "端末上の区間検出",
+  "localSegmentationBody": "スマホ上で Silero VAD を使って文を区切り、完成した区間だけを送信します。\nこれらの設定は全体共通です。プロフィールを切り替えてもモデルは再読み込みされません。",
+  "vadMinSilenceMsLabel": "無音判定 (ms)",
+  "vadMinSilenceMsHint": "700 ― 最も重要な項目。小さくすると反応が速くなるが、小さすぎると文中の間で切れる",
+  "vadThresholdLabel": "音声確率のしきい値",
+  "vadThresholdHint": "0.5 ― 0〜1。低いほど反応しやすく、高いほど保守的",
+  "vadSpeechPadMsLabel": "前後の余白 (ms)",
+  "vadSpeechPadMsHint": "200 ― 区間の両端に少し余白を残す。0 だと最初の音が切れる",
+  "vadMinSpeechMsLabel": "最短有効音声 (ms)",
+  "vadMinSpeechMsHint": "300 ― これより短い区間は捨てる。咳ではアップロードしない",
+  "vadMaxSpeechSLabel": "最長の一文 (s)",
+  "vadMaxSpeechSHint": "60 ― これを超えると強制的に区切る",
+  "speakerRecognition": "話者認識",
+  "onlyMyVoice": "本人の声だけを認識",
+  "voiceprintImportedStatus": "声紋インポート済み",
+  "voiceprintNeeded": "先に声紋をインポートしてください",
+  "openVoiceprintPage": "声紋登録ページを開く",
+  "reimportVoiceprint": "声紋を再インポート",
+  "importVoiceprint": "声紋をインポート",
+  "deleteVoiceprint": "声紋を削除",
+  "similarityThreshold": "類似度のしきい値",
+  "volumeKeys": "音量キー",
+  "volumeKeyClearsQueue": "音量ダウンキーでキューをクリア",
+  "volumeKeySubtitle": "オン：AI が話しているときに音量ダウンで停止（前面のみ）。\nバックグラウンドとロック画面では通知の「話すのを停止」を使う。",
+  "settingsNotice": "認識と合成は brain 側で行われ、スマホは収録・区間検出・送信・再生だけを担当します。\n端末に保存されるのは表示用の履歴で、会話のコンテキストではありません。削除しても brain 側の記憶には影響しません。",
+  "profileAppearance": "このプロフィールの見た目",
+  "nameLabel": "名前",
+  "nameHint": "例：社員3 ― 空欄なら brain_id を使う",
+  "themeColor": "テーマカラー",
+  "colorIndigo": "インディゴ",
+  "colorInkGreen": "深緑",
+  "colorTerracotta": "テラコッタ",
+  "colorPurple": "紫",
+  "colorLakeBlue": "レイクブルー",
+  "colorOchre": "黄土",
+  "colorRose": "ローズ",
+  "colorSlate": "スレート",
+  "baseUrlLabel": "Base URL",
+  "baseUrlHint": "http://192.168.0.100:8000",
+  "brainIdLabel": "brain_id",
+  "brainIdHint": "例：社員3 ― 名前のように意味を持たせる",
+  "tokenLabel": "Bearer token",
+  "tokenHint": "空欄ならこのデプロイは認証なし。このヘッダーは送信されない",
+  "statusSection": "状態",
+  "enabled": "有効",
+  "enabledSubtitleOn": "常にメッセージを受信する（フォーカス外ではテキストのみ記録し、音は出さない）",
+  "enabledSubtitleOff": "接続しない。履歴はディスクに残り、いつでも再度開ける",
+  "focusedDisabledWarning": "現在メイン画面で選択中のプロフィールです。保存すると他の有効なプロフィールに切り替わります。",
+  "switchToThisProfile": "このプロフィールに切り替える",
+  "switchBySwipeHint": "メイン画面で話すボタンを左右にスワイプしても切り替えられる",
+  "historySection": "履歴",
+  "historyUsage": "ディスク使用量 {size}。\n永久保存で自動削除はありません。数百 MB になったらここで消してください。",
+  "@historyUsage": {
+    "placeholders": {
+      "size": {"type": "String"}
+    }
+  },
+  "clearHistoryTitle": "このプロフィールの履歴を削除しますか？",
+  "clearHistoryBody": "メイン画面のこのプロフィールのメッセージがすべて消え、元に戻せません。\n\nbrain 側の記憶には影響しません。ローカルに保存されるのは表示用の履歴で、会話のコンテキストは brain_id にあります。",
+  "historyCleared": "削除しました",
+  "deleteProfileTitle": "「{name}」を削除しますか？",
+  "@deleteProfileTitle": {
+    "placeholders": {
+      "name": {"type": "String"}
+    }
+  },
+  "deleteProfileBody": "このプロフィールの brain 設定とテーマカラーが失われます。\n\nディスク上の履歴は削除されません。誤って削除してもその履歴は残ります。",
+  "deleteProfileAction": "このプロフィールを削除",
+  "chooseAvatar": "アイコンを選択",
+  "changeAvatar": "アイコンを変更",
+  "removeAvatar": "外す",
+  "avatarPickFailed": "フォトライブラリを開けません：{error}",
+  "@avatarPickFailed": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+  "debugPanelTooltip": "デバッグパネル",
+  "brainConfigTooltip": "brain 設定",
+  "starting": "しばらくお待ちください…",
+  "tapToStart": "タップして会話を開始",
+  "segmenterUnavailable": "⚠️ 区間検出エンジンが使えません",
+  "tokenInvalid": "⚠️ token が無効です",
+  "brainUnresponsive": "⚠️ brain が応答しません",
+  "mutedUploadingOff": "ミュート中 · 話した内容は送信されません",
+  "speakingCanClear": "話し中 · 音量ダウンでクリア",
+  "speaking": "話し中",
+  "listening": "聞いています",
+  "queuedUtterances": "さらに {count} 文を送信中",
+  "@queuedUtterances": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "idleHint": "そのまま話しかけてください",
+  "emptyHint": "開始すると、あなたと相手の会話がここに表示されます",
+  "segmenterLoadFailed": "端末上の区間検出エンジンの読み込みに失敗しました",
+  "segmenterLoadFailedBody": "多くは Rust の動的ライブラリ（librust_lib_pp_friend.so）が APK に入っていないか、ABI が合っていません。tools/build_rust_android.sh を再実行して、もう一度インストールしてください。",
+  "noBrain": "brain が未設定です",
+  "noBrainBody": "会話を始めるには Base URL と brain_id を入力してください。",
+  "goToSettings": "設定へ",
+  "mute": "ミュート",
+  "muted": "ミュート中",
+  "bargeIn": "割り込み",
+  "debugTitle": "デバッグパネル",
+  "conversationActive": "会話中",
+  "notStarted": "未開始",
+  "aiSpeaking": "AI が話し中",
+  "aiSilent": "AI は静か",
+  "voiceprintScore": "声紋 {score}",
+  "@voiceprintScore": {
+    "placeholders": {
+      "score": {"type": "String"}
+    }
+  },
+  "voiceprintPending": "声紋は未計測",
+  "voiceprintOff": "声紋照合オフ",
+  "targetProbability": "本人確率 {probability}",
+  "@targetProbability": {
+    "placeholders": {
+      "probability": {"type": "String"}
+    }
+  },
+  "speakerRecognitionOff": "話者認識オフ",
+  "droppedMicFrames": "破棄した収録フレーム",
+  "playbackBacklog": "再生の滞留フレーム",
+  "uploadQueue": "送信キュー",
+  "droppedUtterances": "破棄した文",
+  "polling": "ポーリング中",
+  "stopped": "停止",
+  "upstreamCodec": "上りエンコード",
+  "segmentBuffer": "区間バッファ",
+  "segmentDropped": "区間の破棄",
+  "forcedCuts": "強制区切り",
+  "feedCost": "feed 時間",
+  "filteredNonTarget": "本人以外を除外",
+  "startConversation": "会話を開始",
+  "endConversation": "会話を終了",
+  "droppedFramesWarning": "収録フレームの破棄はメインスレッドが追いついていないことを示します。これは意図的なバックプレッシャー（遅延を溜めるよりフレームを捨てる）ですが、増え続けるなら調査が必要です。",
+  "realtimeLevel": "リアルタイムレベル",
+  "levelExplanation": "テスト音の再生中、マイクのバーはほぼ無音になるはずです。あなたが話すと明確に上がります。これが AEC の判定基準です。（自動割り込みをやめたので、ここにしきい値線はありません。レベルだけを見ます。）",
+  "stopTestTone": "テスト音を停止",
+  "playTestTone": "テスト音を再生（AEC 自己テスト）",
+  "sendTestUtterance": "テスト音声を送信（上り確認）",
+  "testToneExplanation": "テスト音は brain を通らずループ再生されるので、brain が起動していなくても使えます。AEC をいつでも確認できる唯一の入口です。「テスト音声を送信」はテスト音をあなたの発話として上り経路全体に流し、マイクなしでエンコード、multipart、認証、テキストの戻りを確認できます。",
+  "clearAiVoice": "AI 音声をクリア",
+  "clearPlaybackExplanation": "プロトコル上、自動割り込みはしません。受信したら再生します。止めるには手動で：",
+  "clearPlaybackQueue": "再生キューをクリア",
+  "clearPlaybackDetail": "・通知の「話すのを停止」ボタン ― バックグラウンドでもロック画面でも使える\n・音量ダウンキー ― アプリが前面で AI 音声を再生中のみ横取り。それ以外は通常の音量調整。横取りするかは設定の「音量ダウンキーでキューをクリア」で決まり、オフなら音量調整だけ\n\nどちらも音声だけを消します。テキストは影響を受けず、メッセージ欄に残ります。",
+  "aecPanel": "AEC 実測パネル",
+  "aecPanelActiveSubtitle": "変更すると音声経路が即座に再起動します",
+  "aecPanelSubtitle": "一度に一つの変数だけ動かす",
+  "captureSource": "収録ソース",
+  "playbackUsage": "再生属性",
+  "playbackUsageHint": "media にすると AEC が参照信号を取得できない",
+  "performanceMode": "パフォーマンスモード",
+  "performanceModeHint": "lowLatency では effects が無効になることがある",
+  "manualAec": "手動 AEC",
+  "manualAecHint": "AcousticEchoCanceler を重ねる。voiceCommunication とは別経路",
+  "speakerphone": "スピーカー",
+  "speakerphoneHint": "setSpeakerphoneOn ― ホットスイッチ可能。再起動不要",
+  "eventLog": "イベントログ",
+  "noEvents": "まだイベントはありません。メイン画面でボタンを押して話すと、ここに表示されます。",
+  "noEnabledProfiles": "有効なプロフィールがありません",
+  "noEnabledProfilesBody": "設定で新規作成するか、元のプロフィールを有効にしてください",
+  "switchToProfile": "{name}に切り替え",
+  "@switchToProfile": {
+    "placeholders": {
+      "name": {"type": "String"}
+    }
+  },
+  "previousProfile": "前のプロフィール",
+  "nextProfile": "次のプロフィール",
+  "micAfterAec": "マイク（AEC 後）",
+  "playbackOutput": "再生出力",
+  "silent": "無音",
+  "orbStart": "会話を開始",
+  "orbStarting": "起動中",
+  "orbEnd": "会話を終了"
+}

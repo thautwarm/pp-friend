@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:provider/provider.dart';
 
+import 'l10n/app_localizations.dart';
 import 'src/conversation/conversation_controller.dart';
+import 'src/i18n/locale_controller.dart';
 import 'src/ui/home_page.dart';
 
 void main() {
@@ -18,19 +21,24 @@ class PpFriendApp extends StatefulWidget {
 
 class _PpFriendAppState extends State<PpFriendApp> {
   late final ConversationController _controller;
+  late final LocaleController _locale;
 
   static const _seed = Color(0xFF5B6ABF);
 
   @override
   void initState() {
     super.initState();
-    _controller = ConversationController()..permissionGate = _requestPermissions;
+    _controller = ConversationController()
+      ..permissionGate = _requestPermissions;
     // 配置是异步读的，先渲染再补上，避免卡在启动画面
     _controller.loadConfig();
+    // 语言也是异步读的；读回来之前先用系统语言，不会闪一下空白。
+    _locale = LocaleController()..load();
   }
 
   @override
   void dispose() {
+    _locale.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -47,16 +55,27 @@ class _PpFriendAppState extends State<PpFriendApp> {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'PP Friend',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(colorSchemeSeed: _seed, useMaterial3: true),
-      darkTheme: ThemeData(
-        colorSchemeSeed: _seed,
-        brightness: Brightness.dark,
-        useMaterial3: true,
+    // provider 只管“当前选了什么语言”；真正的文案在 gen-l10n 生成的
+    // AppLocalizations 里。两者拆开是因为 MaterialApp 必须整棵重建才
+    // 能换语言，而 provider 正好负责通知。
+    return ChangeNotifierProvider.value(
+      value: _locale,
+      child: Consumer<LocaleController>(
+        builder: (context, locale, _) => MaterialApp(
+          title: 'PP Friend',
+          debugShowCheckedModeBanner: false,
+          locale: locale.locale,
+          supportedLocales: LocaleController.supported,
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          theme: ThemeData(colorSchemeSeed: _seed, useMaterial3: true),
+          darkTheme: ThemeData(
+            colorSchemeSeed: _seed,
+            brightness: Brightness.dark,
+            useMaterial3: true,
+          ),
+          home: HomePage(controller: _controller),
+        ),
       ),
-      home: HomePage(controller: _controller),
     );
   }
 }

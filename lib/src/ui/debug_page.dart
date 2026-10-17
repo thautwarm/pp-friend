@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../l10n/app_localizations.dart';
 import '../conversation/conversation_controller.dart';
 import '../voice/voice_engine.dart';
 import 'widgets/level_meter.dart';
@@ -19,7 +20,7 @@ class DebugPage extends StatelessWidget {
       animation: controller,
       builder: (context, _) {
         return Scaffold(
-          appBar: AppBar(title: const Text('调试面板')),
+          appBar: AppBar(title: Text(AppLocalizations.of(context).debugTitle)),
           body: ListView(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
             children: [
@@ -43,6 +44,7 @@ class DebugPage extends StatelessWidget {
 
   Widget _statusCard(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
     final format = controller.format;
     final stats = controller.segmenterStats;
 
@@ -56,25 +58,36 @@ class DebugPage extends StatelessWidget {
               spacing: 8,
               runSpacing: 8,
               children: [
-                _chip(context, controller.active ? '对话中' : '未开始', controller.active),
-                if (format != null) _chip(context, '${format.sampleRate}Hz', true),
+                _chip(
+                  context,
+                  controller.active ? l10n.conversationActive : l10n.notStarted,
+                  controller.active,
+                ),
+                if (format != null)
+                  _chip(context, '${format.sampleRate}Hz', true),
                 if (controller.segmenterName != null)
                   _chip(context, controller.segmenterName!, true),
-                _chip(context, controller.speaking ? 'AI 说话中' : 'AI 静默', controller.speaking),
+                _chip(
+                  context,
+                  controller.speaking ? l10n.aiSpeaking : l10n.aiSilent,
+                  controller.speaking,
+                ),
                 _chip(
                   context,
                   'prob ${stats.probability.toStringAsFixed(2)}',
                   stats.speaking,
                 ),
-                _chip(context, '闭麦', controller.micMuted),
-                _chip(context, '打断', controller.bargeIn),
+                _chip(context, l10n.mute, controller.micMuted),
+                _chip(context, l10n.bargeIn, controller.bargeIn),
                 _chip(
                   context,
                   stats.speakerVerifyEnabled
                       ? (stats.speakerCos >= 0
-                          ? '声纹 ${stats.speakerCos.toStringAsFixed(2)}'
-                          : '声纹待测')
-                      : '声纹比对关',
+                            ? l10n.voiceprintScore(
+                                stats.speakerCos.toStringAsFixed(2),
+                              )
+                            : l10n.voiceprintPending)
+                      : l10n.voiceprintOff,
                   stats.speakerVerifyEnabled &&
                       stats.speakerCos >= controller.config.pvadMinCosine,
                 ),
@@ -84,8 +97,10 @@ class DebugPage extends StatelessWidget {
                   _chip(
                     context,
                     stats.pvadEnabled
-                        ? '本人概率 ${stats.pvadProb.toStringAsFixed(2)}'
-                        : '说话人识别关',
+                        ? l10n.targetProbability(
+                            stats.pvadProb.toStringAsFixed(2),
+                          )
+                        : l10n.speakerRecognitionOff,
                     stats.pvadEnabled,
                   ),
               ],
@@ -96,7 +111,7 @@ class DebugPage extends StatelessWidget {
                 Expanded(
                   child: _stat(
                     context,
-                    '丢弃采集帧',
+                    l10n.droppedMicFrames,
                     '${controller.droppedMicFrames}',
                     controller.droppedMicFrames > 0
                         ? theme.colorScheme.error
@@ -106,7 +121,7 @@ class DebugPage extends StatelessWidget {
                 Expanded(
                   child: _stat(
                     context,
-                    '播放积压帧',
+                    l10n.playbackBacklog,
                     '${controller.backlogFrames}',
                     theme.colorScheme.onSurfaceVariant,
                   ),
@@ -119,7 +134,7 @@ class DebugPage extends StatelessWidget {
                 Expanded(
                   child: _stat(
                     context,
-                    '上传队列',
+                    l10n.uploadQueue,
                     '${controller.queuedUtterances}',
                     theme.colorScheme.onSurfaceVariant,
                   ),
@@ -127,7 +142,7 @@ class DebugPage extends StatelessWidget {
                 Expanded(
                   child: _stat(
                     context,
-                    '丢弃句子',
+                    l10n.droppedUtterances,
                     '${controller.droppedUtterances}',
                     controller.droppedUtterances > 0
                         ? theme.colorScheme.error
@@ -138,7 +153,7 @@ class DebugPage extends StatelessWidget {
                   child: _stat(
                     context,
                     '/brain-to-human',
-                    controller.polling ? '轮询中' : '停止',
+                    controller.polling ? l10n.polling : l10n.stopped,
                     controller.polling
                         ? theme.colorScheme.primary
                         : theme.colorScheme.onSurfaceVariant,
@@ -147,7 +162,7 @@ class DebugPage extends StatelessWidget {
                 Expanded(
                   child: _stat(
                     context,
-                    '上行编码',
+                    l10n.upstreamCodec,
                     controller.opusUpstream ? 'Opus' : 'WAV',
                     controller.opusUpstream
                         ? theme.colorScheme.primary
@@ -162,7 +177,7 @@ class DebugPage extends StatelessWidget {
                 Expanded(
                   child: _stat(
                     context,
-                    '断句缓冲',
+                    l10n.segmentBuffer,
                     '${stats.bufferedMs}ms',
                     theme.colorScheme.onSurfaceVariant,
                   ),
@@ -170,7 +185,7 @@ class DebugPage extends StatelessWidget {
                 Expanded(
                   child: _stat(
                     context,
-                    '断句丢弃',
+                    l10n.segmentDropped,
                     '${stats.droppedMs}ms',
                     stats.droppedMs > 0
                         ? theme.colorScheme.error
@@ -180,7 +195,7 @@ class DebugPage extends StatelessWidget {
                 Expanded(
                   child: _stat(
                     context,
-                    '强制切句',
+                    l10n.forcedCuts,
                     '${stats.forcedCuts}',
                     theme.colorScheme.onSurfaceVariant,
                   ),
@@ -188,7 +203,7 @@ class DebugPage extends StatelessWidget {
                 Expanded(
                   child: _stat(
                     context,
-                    'feed 耗时',
+                    l10n.feedCost,
                     '${stats.lastFeedMicros}µs',
                     // 单帧超过 3ms 就意味着单核 15% 被吃掉，该挪出 main isolate 了
                     stats.lastFeedMicros > 3000
@@ -199,7 +214,7 @@ class DebugPage extends StatelessWidget {
                 Expanded(
                   child: _stat(
                     context,
-                    '滤掉非本人',
+                    l10n.filteredNonTarget,
                     '${stats.pvadFiltered}',
                     stats.pvadFiltered > 0
                         ? theme.colorScheme.primary
@@ -213,23 +228,29 @@ class DebugPage extends StatelessWidget {
               width: double.infinity,
               child: FilledButton.tonal(
                 onPressed: controller.busy ? null : controller.toggle,
-                child: Text(controller.active ? '结束对话' : '开始对话'),
+                child: Text(
+                  controller.active
+                      ? l10n.endConversation
+                      : l10n.startConversation,
+                ),
               ),
             ),
             if (controller.segmenterError != null) ...[
               const SizedBox(height: 8),
               Text(
                 controller.segmenterError!,
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.error),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.error,
+                ),
               ),
             ],
             if (controller.droppedMicFrames > 0) ...[
               const SizedBox(height: 8),
               Text(
-                '采集帧被丢弃说明主线程没跟上。这是有意的背压策略'
-                '（宁可丢帧也不让延迟累积），但持续增长要查。',
-                style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error),
+                l10n.droppedFramesWarning,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.error,
+                ),
               ),
             ],
           ],
@@ -275,19 +296,20 @@ class DebugPage extends StatelessWidget {
 
   Widget _levelCard(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('实时电平', style: theme.textTheme.titleSmall),
+            Text(l10n.realtimeLevel, style: theme.textTheme.titleSmall),
             const SizedBox(height: 4),
             Text(
-              '播测试音时麦克风条应接近静默；你一开口应明显抬升。这就是 AEC 的判据。'
-              '（不做自动打断之后这里没有阈值线了，纯看电平。）',
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              l10n.levelExplanation,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
             ),
             const SizedBox(height: 16),
             LevelMeter(levels: controller.levelsNotifier),
@@ -297,28 +319,32 @@ class DebugPage extends StatelessWidget {
               child: OutlinedButton.icon(
                 onPressed: controller.active ? controller.toggleTestTone : null,
                 icon: Icon(
-                  controller.testToneOn ? Icons.stop_circle_outlined : Icons.graphic_eq,
+                  controller.testToneOn
+                      ? Icons.stop_circle_outlined
+                      : Icons.graphic_eq,
                 ),
-                label: Text(controller.testToneOn ? '停止测试音' : '播放测试音（AEC 自测）'),
+                label: Text(
+                  controller.testToneOn ? l10n.stopTestTone : l10n.playTestTone,
+                ),
               ),
             ),
             const SizedBox(height: 8),
             SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
-                onPressed: controller.active ? controller.sendTestUtterance : null,
+                onPressed: controller.active
+                    ? controller.sendTestUtterance
+                    : null,
                 icon: const Icon(Icons.upload_outlined),
-                label: const Text('发送测试语音（验证上行）'),
+                label: Text(l10n.sendTestUtterance),
               ),
             ),
             const SizedBox(height: 8),
             Text(
-              '测试音不经过 brain，循环播放，所以 **brain 没起也能用** —— '
-              '这是唯一一个永远可用的 AEC 验证入口。'
-              '「发送测试语音」则把一段测试音当成你说的话走完整条上行链路，'
-              '不需要麦克风就能验证编码、multipart、鉴权和文本回流。',
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              l10n.testToneExplanation,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
             ),
           ],
         ),
@@ -330,8 +356,10 @@ class DebugPage extends StatelessWidget {
 
   Widget _playbackControlCard(BuildContext context) {
     final theme = Theme.of(context);
-    final muted = theme.textTheme.bodySmall
-        ?.copyWith(color: theme.colorScheme.onSurfaceVariant);
+    final l10n = AppLocalizations.of(context);
+    final muted = theme.textTheme.bodySmall?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
 
     return Card(
       child: Padding(
@@ -339,27 +367,20 @@ class DebugPage extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('清空 AI 语音', style: theme.textTheme.titleSmall),
+            Text(l10n.clearAiVoice, style: theme.textTheme.titleSmall),
             const SizedBox(height: 4),
-            Text('协议上不做自动打断 —— 收到就播。要让它闭嘴得手动触发：', style: muted),
+            Text(l10n.clearPlaybackExplanation, style: muted),
             const SizedBox(height: 12),
             SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
                 onPressed: controller.active ? controller.clearPlayback : null,
                 icon: const Icon(Icons.volume_off_outlined),
-                label: const Text('清空播放队列'),
+                label: Text(l10n.clearPlaybackQueue),
               ),
             ),
             const SizedBox(height: 12),
-            Text(
-              '• 通知栏「停止说话」按钮 —— 后台、锁屏都能用\n'
-              '• 音量减键 —— 只在 App 前台且正在播 AI 语音时拦截，'
-              '其余时候放行，不影响正常调音量。'
-              '拦不拦由设置页的「音量减键清空队列」决定，关了它就纯调音量\n\n'
-              '两者都只清音频。文本不受影响，照样进消息流。',
-              style: muted,
-            ),
+            Text(l10n.clearPlaybackDetail, style: muted),
           ],
         ),
       ),
@@ -371,60 +392,74 @@ class DebugPage extends StatelessWidget {
   Widget _aecCard(BuildContext context) {
     final profile = controller.debugProfile;
     final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
 
     return Card(
       child: ExpansionTile(
         shape: const Border(),
-        title: const Text('AEC 实测面板'),
+        title: Text(l10n.aecPanel),
         subtitle: Text(
-          controller.active ? '改动会立即重启音频链路' : '一次只动一个变量',
+          controller.active
+              ? l10n.aecPanelActiveSubtitle
+              : l10n.aecPanelSubtitle,
           style: theme.textTheme.bodySmall,
         ),
         childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         children: [
           _enumRow<CaptureSource>(
             context,
-            label: '采集源',
+            label: l10n.captureSource,
             value: profile.captureSource,
             values: CaptureSource.values,
-            onChanged: (v) => controller.updateDebugProfile(profile.copyWith(captureSource: v)),
+            onChanged: (v) => controller.updateDebugProfile(
+              profile.copyWith(captureSource: v),
+            ),
           ),
           _enumRow<PlaybackUsage>(
             context,
-            label: '播放属性',
-            hint: 'media 会让 AEC 拿不到参考信号',
+            label: l10n.playbackUsage,
+            hint: l10n.playbackUsageHint,
             value: profile.playbackUsage,
             values: PlaybackUsage.values,
-            onChanged: (v) => controller.updateDebugProfile(profile.copyWith(playbackUsage: v)),
+            onChanged: (v) => controller.updateDebugProfile(
+              profile.copyWith(playbackUsage: v),
+            ),
           ),
           _enumRow<AudioPerformanceMode>(
             context,
-            label: '性能模式',
-            hint: 'lowLatency 下 effects 可能失效',
+            label: l10n.performanceMode,
+            hint: l10n.performanceModeHint,
             value: profile.performanceMode,
             values: AudioPerformanceMode.values,
-            onChanged: (v) => controller.updateDebugProfile(profile.copyWith(performanceMode: v)),
+            onChanged: (v) => controller.updateDebugProfile(
+              profile.copyWith(performanceMode: v),
+            ),
           ),
           _enumRow<AudioManagerMode>(
             context,
             label: 'AudioManager',
             value: profile.audioManagerMode,
             values: AudioManagerMode.values,
-            onChanged: (v) => controller.updateDebugProfile(profile.copyWith(audioManagerMode: v)),
+            onChanged: (v) => controller.updateDebugProfile(
+              profile.copyWith(audioManagerMode: v),
+            ),
           ),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
-            title: const Text('手动 AEC'),
-            subtitle: const Text('叠加 AcousticEchoCanceler，与 voiceCommunication 是两条路径'),
+            title: Text(l10n.manualAec),
+            subtitle: Text(l10n.manualAecHint),
             value: profile.manualAec,
-            onChanged: (v) => controller.updateDebugProfile(profile.copyWith(manualAec: v)),
+            onChanged: (v) =>
+                controller.updateDebugProfile(profile.copyWith(manualAec: v)),
           ),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
-            title: const Text('扬声器'),
-            subtitle: const Text('setSpeakerphoneOn —— 可热切，不必重启'),
+            title: Text(l10n.speakerphone),
+            subtitle: Text(l10n.speakerphoneHint),
             value: profile.speakerphone,
-            onChanged: (v) => controller.updateDebugProfile(profile.copyWith(speakerphone: v)),
+            onChanged: (v) => controller.updateDebugProfile(
+              profile.copyWith(speakerphone: v),
+            ),
           ),
         ],
       ),
@@ -452,8 +487,9 @@ class DebugPage extends StatelessWidget {
                 if (hint != null)
                   Text(
                     hint,
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
                   ),
               ],
             ),
@@ -476,6 +512,7 @@ class DebugPage extends StatelessWidget {
 
   Widget _logCard(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
     final log = controller.log;
 
     return Card(
@@ -487,20 +524,22 @@ class DebugPage extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('事件日志', style: theme.textTheme.titleSmall),
+                Text(l10n.eventLog, style: theme.textTheme.titleSmall),
                 Text(
                   '${log.length} / ${ConversationController.logLimit}',
-                  style: theme.textTheme.labelSmall
-                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ],
             ),
             const SizedBox(height: 8),
             if (log.isEmpty)
               Text(
-                '还没有事件。回主界面点一下按钮，说话之后这里会有东西。',
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                l10n.noEvents,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
               )
             else
               // 固定高度 + 内部滚动：日志再多也不会把页面撑长
@@ -517,12 +556,16 @@ class DebugPage extends StatelessWidget {
                         children: [
                           Text(
                             entry.time,
-                            style: theme.textTheme.labelSmall
-                                ?.copyWith(color: theme.colorScheme.outline),
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: theme.colorScheme.outline,
+                            ),
                           ),
                           const SizedBox(width: 8),
                           Expanded(
-                            child: Text(entry.message, style: theme.textTheme.bodySmall),
+                            child: Text(
+                              entry.message,
+                              style: theme.textTheme.bodySmall,
+                            ),
                           ),
                         ],
                       ),

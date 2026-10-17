@@ -3,10 +3,13 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../l10n/app_localizations.dart';
 import '../config/assistant_config.dart';
 import '../conversation/conversation_controller.dart';
+import '../i18n/locale_controller.dart';
 import 'profile_editor.dart';
 import 'widgets/settings_widgets.dart';
 
@@ -122,6 +125,8 @@ class _SettingsPageState extends State<SettingsPage>
     );
   }
 
+  AppLocalizations get _l10n => AppLocalizations.of(context);
+
   void _toast(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
@@ -136,17 +141,18 @@ class _SettingsPageState extends State<SettingsPage>
       double.tryParse(c.text.trim()) ?? fallback;
 
   Future<void> _save() async {
+    final l10n = _l10n;
     final bool written;
     try {
       written = await _editor.currentState?.commit() ?? true;
       await _saveVad();
     } catch (e) {
-      _toast('没保存成功：$e');
+      _toast(l10n.saveFailed('$e'));
       return;
     }
     // 编辑器的档案已经被删掉时它什么都不写。这时候弹"已保存"就是骗人：
     // 用户改的名字、填的地址一起没了，而他以为存住了。
-    _toast(written ? '已保存' : '这个档案已经不在了，改动没有保存');
+    _toast(written ? l10n.saved : l10n.profileGoneUnsaved);
   }
 
   Future<void> _saveVad() async {
@@ -171,22 +177,26 @@ class _SettingsPageState extends State<SettingsPage>
   }
 
   /// 注册页要在线跑 onnxruntime-web，只能开浏览器，不能内嵌。
-  static const _voiceprintPageUrl = 'https://thautwarm.github.io/pp-friend/';
+  /// 直接落到 /enroll/，不然用户还得在主页上再点一次。
+  static const _voiceprintPageUrl =
+      'https://thautwarm.github.io/pp-friend/enroll/';
 
   Future<void> _openVoiceprintPage() async {
+    final l10n = _l10n;
     try {
       final opened = await launchUrl(
         Uri.parse(_voiceprintPageUrl),
         mode: LaunchMode.externalApplication,
       );
-      if (!opened) _toast('没找到能打开网页的应用');
+      if (!opened) _toast(l10n.noAppToOpenPage);
     } catch (e) {
-      _toast('打开网页失败：$e');
+      _toast(l10n.openPageFailed('$e'));
     }
   }
 
   /// 从文件里导入声纹。只认 768 字节的 `spkemb.f32`。
   Future<void> _importVoiceprint() async {
+    final l10n = _l10n;
     // 不按扩展名过滤：Android 对 `.f32` 没有标准 MIME，按 custom 过滤
     // 反而会让文件在列表里变灰。字节数校验比扩展名可靠。
     final file = await FilePicker.pickFile();
@@ -194,27 +204,29 @@ class _SettingsPageState extends State<SettingsPage>
     final bytes = await file.readAsBytes();
     try {
       await widget.controller.importVoiceprint(bytes);
-      _toast('声纹已导入');
+      _toast(l10n.voiceprintImported);
     } on FormatException catch (e) {
-      _toast('这个文件不是声纹：${e.message}');
+      _toast(l10n.notVoiceprint(e.message));
     } catch (e) {
-      _toast('导入失败：$e');
+      _toast(l10n.importFailed('$e'));
     }
   }
 
   Future<void> _removeVoiceprint() async {
+    final l10n = _l10n;
     await widget.controller.removeVoiceprint();
-    _toast('声纹已删除');
+    _toast(l10n.voiceprintRemoved);
   }
 
   /// 换到另一个档案：先把当前的改动落盘，再切。
   Future<void> _select(Profile profile) async {
     if (profile.id == _selectedId) return;
+    final l10n = _l10n;
     // 先落盘再切。落不了就别切 —— 切过去会把这些改动无声无息地冲掉。
     try {
       await _editor.currentState?.commit();
     } catch (e) {
-      _toast('没保存成功，先别切：$e');
+      _toast(l10n.saveFailedBeforeSwitch('$e'));
       return;
     }
     if (!mounted) return;
@@ -227,13 +239,14 @@ class _SettingsPageState extends State<SettingsPage>
   /// 是先落盘再编辑（不是先编辑再落盘）：tab 上得马上出现这一项。
   /// 代价是半途放弃会留下一个空档案 —— 所以它带着一个显眼的"删除"。
   Future<void> _add() async {
+    final l10n = _l10n;
     try {
       await _editor.currentState?.commit();
     } catch (e) {
-      _toast('没保存成功，先别新建：$e');
+      _toast(l10n.saveFailedBeforeAdd('$e'));
       return;
     }
-    final profile = Profile(id: Profile.newId(), name: '新档案');
+    final profile = Profile(id: Profile.newId(), name: l10n.newProfile);
     await widget.controller.saveProfile(profile);
     if (!mounted) return;
     // 新建的那个在列表末尾，往往在屏幕外面 —— 不滚过去的话，编辑器
@@ -245,6 +258,7 @@ class _SettingsPageState extends State<SettingsPage>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
 
     // **整页跟着 controller 重建。** 保存之后名字、开关、头像都变了，
     // 而 `showSnackBar` 不会重建页面 —— 不订阅的话，改完名字按保存，
@@ -253,13 +267,13 @@ class _SettingsPageState extends State<SettingsPage>
       listenable: widget.controller,
       builder: (context, _) => Scaffold(
         appBar: AppBar(
-          title: const Text('配置'),
-          actions: [TextButton(onPressed: _save, child: const Text('保存'))],
+          title: Text(l10n.settingsTitle),
+          actions: [TextButton(onPressed: _save, child: Text(l10n.save))],
           bottom: TabBar(
             controller: _tabs,
-            tabs: const [
-              Tab(text: '档案'),
-              Tab(text: '通用'),
+            tabs: [
+              Tab(text: l10n.tabProfiles),
+              Tab(text: l10n.tabGeneral),
             ],
           ),
         ),
@@ -292,6 +306,7 @@ class _SettingsPageState extends State<SettingsPage>
 
   /// 档案那一排 tab，末尾一个加号。
   Widget _profileTabs() {
+    final l10n = AppLocalizations.of(context);
     final selected = _index;
     return SizedBox(
       height: 56,
@@ -317,7 +332,7 @@ class _SettingsPageState extends State<SettingsPage>
           IconButton.outlined(
             onPressed: _add,
             icon: const Icon(Icons.add),
-            tooltip: '新建档案',
+            tooltip: l10n.newProfileTooltip,
             visualDensity: VisualDensity.compact,
           ),
         ],
@@ -327,6 +342,7 @@ class _SettingsPageState extends State<SettingsPage>
 
   Widget _profileTabChip(Profile profile, bool selected, VoidCallback onTap) {
     final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
     final accent = Color(profile.accentColor);
     final path = widget.controller.avatarPathOf(profile);
     // 关闭的档案看起来就该是"灰的"，一眼分得出哪个开着
@@ -381,7 +397,7 @@ class _SettingsPageState extends State<SettingsPage>
                   color: selected
                       ? onAccentColor(accent).withValues(alpha: 0.7)
                       : theme.colorScheme.onSurfaceVariant,
-                  semanticLabel: '已关闭',
+                  semanticLabel: l10n.profileDisabled,
                 ),
               ],
             ],
@@ -392,15 +408,17 @@ class _SettingsPageState extends State<SettingsPage>
   }
 
   Widget _vadTab(ThemeData theme) {
+    final l10n = AppLocalizations.of(context);
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
       children: [
+        _languageSection(l10n),
+        const SizedBox(height: 16),
         SettingsSection(
-          title: '本地断句',
+          title: l10n.localSegmentation,
           children: [
             Text(
-              '在手机上用 Silero VAD 切句，只上传成句的片段。\n'
-              '这些参数是全局的，切换档案不会重新加载模型。',
+              l10n.localSegmentationBody,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
@@ -408,41 +426,41 @@ class _SettingsPageState extends State<SettingsPage>
             const SizedBox(height: 12),
             SettingsTextField(
               controller: _vadMinSilenceMs,
-              label: '静音判定 (ms)',
-              hint: '700 —— 最重要的一项。调小更跟手，太小会切断句内停顿',
+              label: l10n.vadMinSilenceMsLabel,
+              hint: l10n.vadMinSilenceMsHint,
               keyboardType: TextInputType.number,
             ),
             SettingsTextField(
               controller: _vadThreshold,
-              label: '语音概率阈值',
-              hint: '0.5 —— 0~1。调低更容易触发，调高更保守',
+              label: l10n.vadThresholdLabel,
+              hint: l10n.vadThresholdHint,
               keyboardType: const TextInputType.numberWithOptions(
                 decimal: true,
               ),
             ),
             SettingsTextField(
               controller: _vadSpeechPadMs,
-              label: '前后外扩 (ms)',
-              hint: '200 —— 段两端各留一点，不留会切掉第一个字',
+              label: l10n.vadSpeechPadMsLabel,
+              hint: l10n.vadSpeechPadMsHint,
               keyboardType: TextInputType.number,
             ),
             SettingsTextField(
               controller: _vadMinSpeechMs,
-              label: '最短有效语音 (ms)',
-              hint: '300 —— 比这短直接丢，咳嗽一声不触发上传',
+              label: l10n.vadMinSpeechMsLabel,
+              hint: l10n.vadMinSpeechMsHint,
               keyboardType: TextInputType.number,
             ),
             SettingsTextField(
               controller: _vadMaxSpeechS,
-              label: '最长一句 (s)',
-              hint: '60 —— 说超过就强制切开，避免一直说不完',
+              label: l10n.vadMaxSpeechSLabel,
+              hint: l10n.vadMaxSpeechSHint,
               keyboardType: TextInputType.number,
             ),
           ],
         ),
         const SizedBox(height: 16),
         SettingsSection(
-          title: '说话人识别',
+          title: l10n.speakerRecognition,
           children: [
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
@@ -450,9 +468,11 @@ class _SettingsPageState extends State<SettingsPage>
               onChanged: (enabled) => widget.controller.updateConfig(
                 widget.controller.config.copyWith(pvadEnabled: enabled),
               ),
-              title: const Text('只识别本人的声音'),
+              title: Text(l10n.onlyMyVoice),
               subtitle: Text(
-                widget.controller.hasVoiceprint ? '已导入声纹' : '需要先导入声纹',
+                widget.controller.hasVoiceprint
+                    ? l10n.voiceprintImportedStatus
+                    : l10n.voiceprintNeeded,
               ),
             ),
             const SizedBox(height: 8),
@@ -463,20 +483,22 @@ class _SettingsPageState extends State<SettingsPage>
                 OutlinedButton.icon(
                   onPressed: _openVoiceprintPage,
                   icon: const Icon(Icons.open_in_new),
-                  label: const Text('打开声纹录制页面'),
+                  label: Text(l10n.openVoiceprintPage),
                 ),
                 OutlinedButton.icon(
                   onPressed: _importVoiceprint,
                   icon: const Icon(Icons.file_open_outlined),
                   label: Text(
-                    widget.controller.hasVoiceprint ? '重新导入声纹' : '导入声纹',
+                    widget.controller.hasVoiceprint
+                        ? l10n.reimportVoiceprint
+                        : l10n.importVoiceprint,
                   ),
                 ),
                 if (widget.controller.hasVoiceprint)
                   TextButton.icon(
                     onPressed: _removeVoiceprint,
                     icon: const Icon(Icons.delete_outline),
-                    label: const Text('删除声纹'),
+                    label: Text(l10n.deleteVoiceprint),
                   ),
               ],
             ),
@@ -485,7 +507,7 @@ class _SettingsPageState extends State<SettingsPage>
               const SizedBox(height: 12),
               SettingsTextField(
                 controller: _pvadMinCosine,
-                label: '相似度阈值',
+                label: l10n.similarityThreshold,
                 hint: '0.40',
                 keyboardType: const TextInputType.numberWithOptions(
                   decimal: true,
@@ -496,7 +518,7 @@ class _SettingsPageState extends State<SettingsPage>
         ),
         const SizedBox(height: 16),
         SettingsSection(
-          title: '音量键',
+          title: l10n.volumeKeys,
           children: [
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
@@ -506,21 +528,43 @@ class _SettingsPageState extends State<SettingsPage>
                   volumeKeyClearsQueue: enabled,
                 ),
               ),
-              title: const Text('音量减键清空队列'),
-              subtitle: const Text(
-                '开着：AI 说话时按音量减让它闭嘴（仅前台）。\n'
-                '后台和锁屏用通知栏的「停止说话」。',
-              ),
+              title: Text(l10n.volumeKeyClearsQueue),
+              subtitle: Text(l10n.volumeKeySubtitle),
             ),
           ],
         ),
         const SizedBox(height: 16),
-        _notice(theme),
+        _notice(theme, l10n),
       ],
     );
   }
 
-  Widget _notice(ThemeData theme) {
+  Widget _languageSection(AppLocalizations l10n) {
+    final locale = context.watch<LocaleController>();
+    return SettingsSection(
+      title: l10n.languageSection,
+      children: [
+        DropdownButton<String>(
+          value: locale.selection,
+          isExpanded: true,
+          items: [
+            DropdownMenuItem(
+              value: LocaleController.systemValue,
+              child: Text(l10n.languageFollowSystem),
+            ),
+            DropdownMenuItem(value: 'zh', child: Text(l10n.languageChinese)),
+            DropdownMenuItem(value: 'en', child: Text(l10n.languageEnglish)),
+            DropdownMenuItem(value: 'ja', child: Text(l10n.languageJapanese)),
+          ],
+          onChanged: (value) {
+            if (value != null) locale.select(value);
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _notice(ThemeData theme, AppLocalizations l10n) {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -528,8 +572,7 @@ class _SettingsPageState extends State<SettingsPage>
         borderRadius: BorderRadius.circular(12),
       ),
       child: Text(
-        '识别和合成在 brain 那边，手机只负责采集、切句、上传、播放。\n'
-        '本机保存的是展示用的历史，不是对话上下文；删掉它不影响 brain 那边的记忆。',
+        l10n.settingsNotice,
         style: theme.textTheme.bodySmall?.copyWith(
           color: theme.colorScheme.onSecondaryContainer,
         ),

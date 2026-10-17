@@ -8,23 +8,24 @@ import 'package:pp_friend/src/conversation/message.dart';
 import 'package:pp_friend/src/storage/memory_message_store.dart';
 import 'package:pp_friend/src/ui/home_page.dart';
 
+import 'support/test_app.dart';
 import 'support/voice_fakes.dart';
 
 AssistantConfig _twoProfiles() => const AssistantConfig(
-      profiles: [
-        Profile(
-          id: 'p_a',
-          name: 'A',
-          brain: BrainConfig(baseUrl: 'http://test.local:8000', brainId: 'a'),
-        ),
-        Profile(
-          id: 'p_b',
-          name: 'B',
-          brain: BrainConfig(baseUrl: 'http://test.local:8000', brainId: 'b'),
-        ),
-      ],
-      focusedProfileId: 'p_a',
-    );
+  profiles: [
+    Profile(
+      id: 'p_a',
+      name: 'A',
+      brain: BrainConfig(baseUrl: 'http://test.local:8000', brainId: 'a'),
+    ),
+    Profile(
+      id: 'p_b',
+      name: 'B',
+      brain: BrainConfig(baseUrl: 'http://test.local:8000', brainId: 'b'),
+    ),
+  ],
+  focusedProfileId: 'p_a',
+);
 
 Future<ConversationController> _boot(MemoryMessageStore store) async {
   final controller = ConversationController(
@@ -45,9 +46,7 @@ Future<void> _settle(WidgetTester tester, [int frames = 8]) async {
 }
 
 Future<void> _pumpHome(WidgetTester tester, ConversationController c) async {
-  await tester.pumpWidget(
-    MaterialApp(home: HomePage(controller: c)),
-  );
+  await tester.pumpWidget(testApp(HomePage(controller: c)));
   await _settle(tester);
 }
 
@@ -106,8 +105,7 @@ void main() {
 
     expect(controller.config.focusedProfileId, 'p_b');
     expect(find.text('B 说的话'), findsOneWidget);
-    expect(find.text('A 说的话'), findsNothing,
-        reason: '一个档案一屏历史，不混在一起');
+    expect(find.text('A 说的话'), findsNothing, reason: '一个档案一屏历史，不混在一起');
   });
 
   testWidgets('往上翻会加载更早的历史，加载完之后视野不跳', (tester) async {
@@ -132,20 +130,29 @@ void main() {
     await tester.drag(find.byType(ListView), const Offset(0, 30000));
     await _settle(tester, 6);
 
-    expect(controller.messages.length, greaterThan(300),
-        reason: '翻到顶就该去读更早的那一页');
+    expect(
+      controller.messages.length,
+      greaterThan(300),
+      reason: '翻到顶就该去读更早的那一页',
+    );
     expect(controller.messages.first.seq, 1);
-    expect(controller.messages.map((m) => m.seq).toSet().length,
-        controller.messages.length,
-        reason: '不重不漏');
+    expect(
+      controller.messages.map((m) => m.seq).toSet().length,
+      controller.messages.length,
+      reason: '不重不漏',
+    );
 
     // 往前面插 40 条会让内容变高。不补偿滚动位置的话 pixels 还停在 0，
     // 用户会瞬间被弹到最开头。
     final position = _listPosition(tester);
     final grew = position.maxScrollExtent - maxBefore;
     expect(grew, greaterThan(0));
-    expect(position.pixels, closeTo(grew, 1),
-        reason: '补了正好"新插进来那些的高度"：插进来的应该在视野上面，'
-            '而不是把当前视野挤走');
+    expect(
+      position.pixels,
+      closeTo(grew, 1),
+      reason:
+          '补了正好"新插进来那些的高度"：插进来的应该在视野上面，'
+          '而不是把当前视野挤走',
+    );
   });
 }

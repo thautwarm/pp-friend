@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../l10n/app_localizations.dart';
 import '../config/assistant_config.dart';
 import '../conversation/conversation_controller.dart';
 import 'widgets/settings_widgets.dart';
@@ -53,15 +54,26 @@ class ProfileEditorState extends State<ProfileEditor> {
 
   /// 预设主题色。用色块而不是调色盘：一眼看全、点了就跑。
   /// 第一个和全局种子色一致，默认档案看着不突兀。
-  static const List<(String, int)> _presets = [
-    ('靛蓝', Profile.defaultAccentColor),
-    ('墨绿', 0xFF2E7D6B),
-    ('陶土', 0xFF9C4B2F),
-    ('紫', 0xFF7B4FA8),
-    ('湖蓝', 0xFF1F6FB2),
-    ('赭黄', 0xFFB0722B),
-    ('玫红', 0xFFB03A5B),
-    ('石板', 0xFF4A5A66),
+  static const List<int> _presetColors = [
+    Profile.defaultAccentColor,
+    0xFF2E7D6B,
+    0xFF9C4B2F,
+    0xFF7B4FA8,
+    0xFF1F6FB2,
+    0xFFB0722B,
+    0xFFB03A5B,
+    0xFF4A5A66,
+  ];
+
+  List<String> _colorNames(AppLocalizations l10n) => [
+    l10n.colorIndigo,
+    l10n.colorInkGreen,
+    l10n.colorTerracotta,
+    l10n.colorPurple,
+    l10n.colorLakeBlue,
+    l10n.colorOchre,
+    l10n.colorRose,
+    l10n.colorSlate,
   ];
 
   @override
@@ -106,8 +118,9 @@ class ProfileEditorState extends State<ProfileEditor> {
 
   /// 配置里此刻的那一份。找不到（已经被删）返回 null。
   Profile? _current() {
-    final index = widget.controller.config.profiles
-        .indexWhere((p) => p.id == widget.profile.id);
+    final index = widget.controller.config.profiles.indexWhere(
+      (p) => p.id == widget.profile.id,
+    );
     return index < 0 ? null : widget.controller.config.profiles[index];
   }
 
@@ -134,18 +147,20 @@ class ProfileEditorState extends State<ProfileEditor> {
     if (current == null) return false; // 档案已经被删了
     _busy = true;
     try {
-      await widget.controller.saveProfile(current.copyWith(
-        name: _name.text.trim(),
-        brain: BrainConfig(
-          baseUrl: _baseUrl.text.trim(),
-          brainId: _brainId.text.trim(),
-          token: _token.text.trim(),
+      await widget.controller.saveProfile(
+        current.copyWith(
+          name: _name.text.trim(),
+          brain: BrainConfig(
+            baseUrl: _baseUrl.text.trim(),
+            brainId: _brainId.text.trim(),
+            token: _token.text.trim(),
+          ),
+          accentColor: _accent,
+          enabled: _enabled,
+          // 头像**不在这里清**：clearAvatar 一清，就不知道该删哪个文件了。
+          // 去掉头像走 setAvatar(id, null)，它读到的还是旧文件名。
         ),
-        accentColor: _accent,
-        enabled: _enabled,
-        // 头像**不在这里清**：clearAvatar 一清，就不知道该删哪个文件了。
-        // 去掉头像走 setAvatar(id, null)，它读到的还是旧文件名。
-      ));
+      );
 
       final picked = _pickedAvatar;
       if (picked != null) {
@@ -165,6 +180,7 @@ class ProfileEditorState extends State<ProfileEditor> {
   // ------------------------------------------------------------ 头像
 
   Future<void> _pickAvatar() async {
+    final l10n = _l10n;
     XFile? picked;
     try {
       picked = await ImagePicker().pickImage(
@@ -176,7 +192,7 @@ class ProfileEditorState extends State<ProfileEditor> {
         maxHeight: 512,
       );
     } catch (e) {
-      _toast('打不开相册：$e');
+      _toast(l10n.avatarPickFailed('$e'));
       return;
     }
     if (picked == null) return; // 用户取消了
@@ -206,9 +222,12 @@ class ProfileEditorState extends State<ProfileEditor> {
 
   // ------------------------------------------------------------ 危险动作
 
+  AppLocalizations get _l10n => AppLocalizations.of(context);
+
   void _toast(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<bool?> _confirm({
@@ -216,6 +235,7 @@ class ProfileEditorState extends State<ProfileEditor> {
     required String body,
     required String action,
   }) {
+    final cancelText = _l10n.cancel;
     return showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -224,7 +244,7 @@ class ProfileEditorState extends State<ProfileEditor> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('算了'),
+            child: Text(cancelText),
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
@@ -236,25 +256,24 @@ class ProfileEditorState extends State<ProfileEditor> {
   }
 
   Future<void> _clearHistory() async {
+    final l10n = _l10n;
     final ok = await _confirm(
-      title: '清空这个档案的历史？',
-      body: '主界面上这个档案的消息会全部消失，而且找不回来。\n\n'
-          'brain 那边的记忆不受影响 —— 本地存的是展示用的历史，'
-          '对话上下文一直挂在 brain_id 上。',
-      action: '清空',
+      title: l10n.clearHistoryTitle,
+      body: l10n.clearHistoryBody,
+      action: l10n.clear,
     );
     if (ok != true) return;
     await widget.controller.clearHistory(widget.profile.id);
     await _loadHistorySize();
-    _toast('已清空');
+    _toast(l10n.historyCleared);
   }
 
   Future<void> _delete() async {
+    final l10n = _l10n;
     final ok = await _confirm(
-      title: '删掉「${widget.profile.displayName}」？',
-      body: '这个档案的 brain 配置和主题色都会没。\n\n'
-          '盘上的历史不跟着删 —— 万一删错了，那一份还在。',
-      action: '删除',
+      title: l10n.deleteProfileTitle(widget.profile.displayName),
+      body: l10n.deleteProfileBody,
+      action: l10n.delete,
     );
     if (ok != true) return;
     await widget.controller.removeProfile(widget.profile.id);
@@ -266,6 +285,7 @@ class ProfileEditorState extends State<ProfileEditor> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
     final profile = widget.profile;
     final focused = widget.controller.config.focusedProfileId == profile.id;
 
@@ -273,20 +293,21 @@ class ProfileEditorState extends State<ProfileEditor> {
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
       children: [
         SettingsSection(
-          title: '这个档案长什么样',
+          title: l10n.profileAppearance,
           children: [
             _avatarRow(theme),
             const SizedBox(height: 14),
             SettingsTextField(
               controller: _name,
-              label: '名字',
-              hint: '例如 员工3 —— 留空就用 brain_id',
+              label: l10n.nameLabel,
+              hint: l10n.nameHint,
             ),
             const SizedBox(height: 4),
             Text(
-              '主题色',
-              style: theme.textTheme.labelLarge
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              l10n.themeColor,
+              style: theme.textTheme.labelLarge?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
             ),
             const SizedBox(height: 8),
             _swatches(theme),
@@ -298,32 +319,30 @@ class ProfileEditorState extends State<ProfileEditor> {
           children: [
             SettingsTextField(
               controller: _baseUrl,
-              label: 'Base URL',
-              hint: 'http://192.168.0.100:8000',
+              label: l10n.baseUrlLabel,
+              hint: l10n.baseUrlHint,
             ),
             SettingsTextField(
               controller: _brainId,
-              label: 'brain_id',
-              hint: '例如 员工3 —— 像名字一样有语义',
+              label: l10n.brainIdLabel,
+              hint: l10n.brainIdHint,
             ),
             SettingsTextField(
               controller: _token,
-              label: 'Bearer token',
-              hint: '留空表示该部署没启用鉴权，不会发这个头',
+              label: l10n.tokenLabel,
+              hint: l10n.tokenHint,
             ),
           ],
         ),
         const SizedBox(height: 16),
         SettingsSection(
-          title: '状态',
+          title: l10n.statusSection,
           children: [
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text('启用'),
+              title: Text(l10n.enabled),
               subtitle: Text(
-                _enabled
-                    ? '会一直收它的消息（没聚焦时只记文字，不出声）'
-                    : '不连它。历史仍然留在盘上，随时可以再打开',
+                _enabled ? l10n.enabledSubtitleOn : l10n.enabledSubtitleOff,
                 style: theme.textTheme.bodySmall,
               ),
               value: _enabled,
@@ -333,9 +352,10 @@ class ProfileEditorState extends State<ProfileEditor> {
               Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(
-                  '它现在是主界面上选中的那个。保存之后会自动切到别的开着的档案。',
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: theme.colorScheme.error),
+                  l10n.focusedDisabledWarning,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.error,
+                  ),
                 ),
               ),
             if (_enabled && !focused) ...[
@@ -343,30 +363,29 @@ class ProfileEditorState extends State<ProfileEditor> {
               Align(
                 alignment: Alignment.centerLeft,
                 child: OutlinedButton.icon(
-                  onPressed: () =>
-                      widget.controller.switchProfile(profile.id),
+                  onPressed: () => widget.controller.switchProfile(profile.id),
                   icon: const Icon(Icons.swap_horiz, size: 18),
-                  label: const Text('切到这个档案'),
+                  label: Text(l10n.switchToThisProfile),
                 ),
               ),
               Text(
-                '主界面上左右滑说话按钮也能切',
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                l10n.switchBySwipeHint,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
               ),
             ],
           ],
         ),
         const SizedBox(height: 16),
         SettingsSection(
-          title: '历史',
+          title: l10n.historySection,
           children: [
             Row(
               children: [
                 Expanded(
                   child: Text(
-                    '盘上占 ${formatBytes(_historyBytes)}。\n'
-                    '永久保留，没有自动清理 —— 攒到几百 MB 就自己来这里清。',
+                    l10n.historyUsage(formatBytes(_historyBytes)),
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
@@ -374,7 +393,7 @@ class ProfileEditorState extends State<ProfileEditor> {
                 ),
                 OutlinedButton(
                   onPressed: _historyBytes == 0 ? null : _clearHistory,
-                  child: const Text('清空'),
+                  child: Text(l10n.clear),
                 ),
               ],
             ),
@@ -385,7 +404,7 @@ class ProfileEditorState extends State<ProfileEditor> {
           child: TextButton.icon(
             onPressed: _delete,
             icon: const Icon(Icons.delete_outline),
-            label: const Text('删除这个档案'),
+            label: Text(l10n.deleteProfileAction),
             style: TextButton.styleFrom(
               foregroundColor: theme.colorScheme.error,
             ),
@@ -396,15 +415,17 @@ class ProfileEditorState extends State<ProfileEditor> {
   }
 
   Widget _avatarRow(ThemeData theme) {
+    final l10n = AppLocalizations.of(context);
     final image = _avatarImage();
 
     // 没头像、或者头像读不出来，就用名字的第一个字。比一个通用的小人图标
     // 好认，不同档案一眼能分开。
     Widget letter() => Text(
-          widget.profile.displayName.characters.first,
-          style: theme.textTheme.headlineSmall
-              ?.copyWith(color: onAccentColor(Color(_accent))),
-        );
+      widget.profile.displayName.characters.first,
+      style: theme.textTheme.headlineSmall?.copyWith(
+        color: onAccentColor(Color(_accent)),
+      ),
+    );
 
     return Row(
       children: [
@@ -437,10 +458,15 @@ class ProfileEditorState extends State<ProfileEditor> {
             children: [
               OutlinedButton(
                 onPressed: _pickAvatar,
-                child: Text(image == null ? '选头像' : '换头像'),
+                child: Text(
+                  image == null ? l10n.chooseAvatar : l10n.changeAvatar,
+                ),
               ),
               if (image != null)
-                TextButton(onPressed: _dropAvatar, child: const Text('去掉')),
+                TextButton(
+                  onPressed: _dropAvatar,
+                  child: Text(l10n.removeAvatar),
+                ),
             ],
           ),
         ),
@@ -449,32 +475,37 @@ class ProfileEditorState extends State<ProfileEditor> {
   }
 
   Widget _swatches(ThemeData theme) {
+    final names = _colorNames(AppLocalizations.of(context));
     return Wrap(
       spacing: 10,
       runSpacing: 10,
       children: [
-        for (final (name, value) in _presets)
+        for (var i = 0; i < _presetColors.length; i++)
           Semantics(
-            label: name,
-            selected: value == _accent,
+            label: names[i],
+            selected: _presetColors[i] == _accent,
             child: InkWell(
-              onTap: () => setState(() => _accent = value),
+              onTap: () => setState(() => _accent = _presetColors[i]),
               customBorder: const CircleBorder(),
               child: Container(
                 width: 36,
                 height: 36,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: Color(value),
+                  color: Color(_presetColors[i]),
                   border: Border.all(
-                    color: value == _accent
+                    color: _presetColors[i] == _accent
                         ? theme.colorScheme.onSurface
                         : Colors.transparent,
                     width: 3,
                   ),
                 ),
-                child: value == _accent
-                    ? Icon(Icons.check, size: 18, color: onAccentColor(Color(value)))
+                child: _presetColors[i] == _accent
+                    ? Icon(
+                        Icons.check,
+                        size: 18,
+                        color: onAccentColor(Color(_presetColors[i])),
+                      )
                     : null,
               ),
             ),

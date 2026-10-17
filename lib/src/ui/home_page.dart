@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import '../../l10n/app_localizations.dart';
 import '../config/profile.dart';
 import '../conversation/conversation_controller.dart';
 import '../conversation/message.dart';
@@ -112,10 +113,12 @@ class _HomePageState extends State<HomePage> {
       // _syncFocusedProfile 会负责滚到底。
       if (_scroll.hasClients && _lastFocusedId == focused) {
         final delta = _scroll.position.maxScrollExtent - before;
-        _scroll.jumpTo((_scroll.position.pixels + delta).clamp(
-          0.0,
-          _scroll.position.maxScrollExtent,
-        ));
+        _scroll.jumpTo(
+          (_scroll.position.pixels + delta).clamp(
+            0.0,
+            _scroll.position.maxScrollExtent,
+          ),
+        );
       }
       setState(() => _loadingEarlier = false);
     });
@@ -138,7 +141,8 @@ class _HomePageState extends State<HomePage> {
     if (_scroll.hasClients) {
       final position = _scroll.position;
       wasAtBottom =
-          (position.maxScrollExtent - position.pixels) < _stickToBottomThreshold;
+          (position.maxScrollExtent - position.pixels) <
+          _stickToBottomThreshold;
     }
     if (!wasAtBottom) return;
 
@@ -176,6 +180,7 @@ class _HomePageState extends State<HomePage> {
     return AnimatedBuilder(
       animation: controller,
       builder: (context, _) {
+        final l10n = AppLocalizations.of(context);
         _maybeAutoScroll(controller.lastSeq);
         _syncFocusedProfile(controller.config.focusedProfileId);
         return Scaffold(
@@ -184,7 +189,7 @@ class _HomePageState extends State<HomePage> {
             centerTitle: false,
             actions: [
               IconButton(
-                tooltip: '调试面板',
+                tooltip: l10n.debugPanelTooltip,
                 icon: const Icon(Icons.tune_rounded),
                 onPressed: () => Navigator.of(context).push(
                   MaterialPageRoute<void>(
@@ -193,7 +198,7 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
               IconButton(
-                tooltip: 'brain 配置',
+                tooltip: l10n.brainConfigTooltip,
                 icon: const Icon(Icons.settings_outlined),
                 onPressed: () => Navigator.of(context).push(
                   MaterialPageRoute<void>(
@@ -251,35 +256,36 @@ class _HomePageState extends State<HomePage> {
 
   Widget _headline(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
     final controller = widget.controller;
 
     final String text;
     if (controller.busy) {
-      text = '请稍候…';
+      text = l10n.starting;
     } else if (!controller.active) {
-      text = '点击开始对话';
+      text = l10n.tapToStart;
     } else if (controller.segmenterError != null) {
       // 断了就没法切句，比 brain 连不上更致命 —— 用户说话将毫无反应
-      text = '⚠️ 断句引擎不可用';
+      text = l10n.segmenterUnavailable;
     } else if (controller.authFailed) {
-      text = '⚠️ token 无效';
+      text = l10n.tokenInvalid;
     } else if (controller.brainError != null) {
       // brain 连不上时，光显示"正在听你说"是骗人的
-      text = '⚠️ brain 无响应';
+      text = l10n.brainUnresponsive;
     } else if (controller.micMuted) {
       // 压在"正在说话/正在听"前面：麦克风关着是这一屏最重要的事实
-      text = '闭麦中 · 说的话不会上传';
+      text = l10n.mutedUploadingOff;
     } else if (controller.speaking) {
       // 关掉那个开关之后音量减就只是调音量了，再写着"可以清空"是骗人
       text = controller.config.volumeKeyClearsQueue
-          ? '正在说话 · 音量减可以清空'
-          : '正在说话';
+          ? l10n.speakingCanClear
+          : l10n.speaking;
     } else if (controller.userSpeaking) {
-      text = '正在听你说';
+      text = l10n.listening;
     } else if (controller.queuedUtterances > 0) {
-      text = '还有 ${controller.queuedUtterances} 句在上传';
+      text = l10n.queuedUtterances(controller.queuedUtterances);
     } else {
-      text = '正在听你说';
+      text = l10n.listening;
     }
 
     return AnimatedSwitcher(
@@ -298,6 +304,7 @@ class _HomePageState extends State<HomePage> {
 
   Widget _messageStream(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
     final controller = widget.controller;
     final messages = controller.messages;
 
@@ -316,12 +323,11 @@ class _HomePageState extends State<HomePage> {
           if (!controller.config.brain.isUsable) _configBanner(context),
           const SizedBox(height: 24),
           Text(
-            controller.active
-                ? '直接说话就行'
-                : '开始之后，你和它说的话都会出现在这里',
+            controller.active ? l10n.idleHint : l10n.emptyHint,
             textAlign: TextAlign.center,
-            style: theme.textTheme.bodyMedium
-                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
         ],
       );
@@ -343,7 +349,9 @@ class _HomePageState extends State<HomePage> {
         return _bubble(
           context,
           message,
-          key: message.seq > 0 ? ValueKey<int>(message.seq) : ObjectKey(message),
+          key: message.seq > 0
+              ? ValueKey<int>(message.seq)
+              : ObjectKey(message),
         );
       },
     );
@@ -356,6 +364,7 @@ class _HomePageState extends State<HomePage> {
   /// 所以必须在主界面正面说出来，而不是只写进调试日志。
   Widget _segmenterBanner(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
@@ -368,23 +377,27 @@ class _HomePageState extends State<HomePage> {
         children: [
           Row(
             children: [
-              Icon(Icons.error_outline,
-                  size: 18, color: theme.colorScheme.onErrorContainer),
+              Icon(
+                Icons.error_outline,
+                size: 18,
+                color: theme.colorScheme.onErrorContainer,
+              ),
               const SizedBox(width: 8),
               Text(
-                '本地断句引擎加载失败',
-                style: theme.textTheme.titleSmall
-                    ?.copyWith(color: theme.colorScheme.onErrorContainer),
+                l10n.segmenterLoadFailed,
+                style: theme.textTheme.titleSmall?.copyWith(
+                  color: theme.colorScheme.onErrorContainer,
+                ),
               ),
             ],
           ),
           const SizedBox(height: 6),
           Text(
             '${widget.controller.segmenterError}\n\n'
-            '多半是 Rust 动态库（librust_lib_pp_friend.so）没打进 APK，'
-            '或 ABI 对不上。重跑 tools/build_rust_android.sh 再装一次。',
-            style: theme.textTheme.bodySmall
-                ?.copyWith(color: theme.colorScheme.onErrorContainer),
+            '${l10n.segmenterLoadFailedBody}',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onErrorContainer,
+            ),
           ),
         ],
       ),
@@ -397,6 +410,7 @@ class _HomePageState extends State<HomePage> {
   /// 而原因只写在调试日志里。那是最糟糕的一种失败：静默。
   Widget _configBanner(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -408,21 +422,26 @@ class _HomePageState extends State<HomePage> {
         children: [
           Row(
             children: [
-              Icon(Icons.error_outline,
-                  size: 18, color: theme.colorScheme.onErrorContainer),
+              Icon(
+                Icons.error_outline,
+                size: 18,
+                color: theme.colorScheme.onErrorContainer,
+              ),
               const SizedBox(width: 8),
               Text(
-                '还没配置 brain',
-                style: theme.textTheme.titleSmall
-                    ?.copyWith(color: theme.colorScheme.onErrorContainer),
+                l10n.noBrain,
+                style: theme.textTheme.titleSmall?.copyWith(
+                  color: theme.colorScheme.onErrorContainer,
+                ),
               ),
             ],
           ),
           const SizedBox(height: 6),
           Text(
-            '填好 Base URL 和 brain_id 才能开始对话。',
-            style: theme.textTheme.bodySmall
-                ?.copyWith(color: theme.colorScheme.onErrorContainer),
+            l10n.noBrainBody,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onErrorContainer,
+            ),
           ),
           const SizedBox(height: 12),
           Align(
@@ -433,7 +452,7 @@ class _HomePageState extends State<HomePage> {
                   builder: (_) => SettingsPage(controller: widget.controller),
                 ),
               ),
-              child: const Text('去配置'),
+              child: Text(l10n.goToSettings),
             ),
           ),
         ],
@@ -447,6 +466,7 @@ class _HomePageState extends State<HomePage> {
   /// 临时动作，点进设置页再退出来，话都说完了。
   Widget _toggles(BuildContext context) {
     final controller = widget.controller;
+    final l10n = AppLocalizations.of(context);
     // 没开始对话时它没有意义（本来就没在采音频）。置灰但**不隐藏** ——
     // 否则开始/结束的一瞬间按钮会跳一下。
     final enabled = controller.active && !controller.busy;
@@ -456,7 +476,7 @@ class _HomePageState extends State<HomePage> {
       children: [
         _toggleChip(
           icon: controller.micMuted ? Icons.mic_off_rounded : Icons.mic_rounded,
-          label: controller.micMuted ? '闭麦中' : '闭麦',
+          label: controller.micMuted ? l10n.muted : l10n.mute,
           on: controller.micMuted,
           enabled: enabled,
           onTap: controller.toggleMicMuted,
@@ -464,7 +484,7 @@ class _HomePageState extends State<HomePage> {
         const SizedBox(width: 10),
         _toggleChip(
           icon: Icons.front_hand_rounded,
-          label: '打断',
+          label: l10n.bargeIn,
           on: controller.bargeIn,
           // 闭麦时打断天然失效（音频根本没上去），灰掉而不是假装能用
           enabled: enabled && !controller.micMuted,
@@ -528,8 +548,9 @@ class _HomePageState extends State<HomePage> {
       key: key,
       padding: const EdgeInsets.only(bottom: 10),
       child: Row(
-        mainAxisAlignment:
-            fromUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+        mainAxisAlignment: fromUser
+            ? MainAxisAlignment.end
+            : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           if (!fromUser) _avatar(theme, Icons.graphic_eq_rounded, foreground),
@@ -553,7 +574,9 @@ class _HomePageState extends State<HomePage> {
                 children: [
                   Text(
                     message.text,
-                    style: theme.textTheme.bodyLarge?.copyWith(color: foreground),
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      color: foreground,
+                    ),
                   ),
                   const SizedBox(height: 3),
                   Text(

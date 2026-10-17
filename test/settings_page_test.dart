@@ -10,23 +10,24 @@ import 'package:pp_friend/src/storage/memory_message_store.dart';
 import 'package:pp_friend/src/ui/settings_page.dart';
 
 import 'support/avatar_fakes.dart';
+import 'support/test_app.dart';
 import 'support/voice_fakes.dart';
 
 AssistantConfig _twoProfiles() => const AssistantConfig(
-      profiles: [
-        Profile(
-          id: 'p_a',
-          name: 'A',
-          brain: BrainConfig(baseUrl: 'http://test.local:8000', brainId: 'a'),
-        ),
-        Profile(
-          id: 'p_b',
-          name: 'B',
-          brain: BrainConfig(baseUrl: 'http://test.local:8000', brainId: 'b'),
-        ),
-      ],
-      focusedProfileId: 'p_a',
-    );
+  profiles: [
+    Profile(
+      id: 'p_a',
+      name: 'A',
+      brain: BrainConfig(baseUrl: 'http://test.local:8000', brainId: 'a'),
+    ),
+    Profile(
+      id: 'p_b',
+      name: 'B',
+      brain: BrainConfig(baseUrl: 'http://test.local:8000', brainId: 'b'),
+    ),
+  ],
+  focusedProfileId: 'p_a',
+);
 
 /// 全程不碰磁盘：历史走内存、头像走假的。
 ///
@@ -39,28 +40,30 @@ Future<(ConversationController, FakeAvatarStore)> _boot() async {
 }
 
 /// 要多一个假引擎的时候用它 —— 断言"配置有没有真的推到原生"需要拿到它。
-Future<(ConversationController, FakeAvatarStore, FakeVoiceEngine)> _bootFull() async {
+Future<(ConversationController, FakeAvatarStore, FakeVoiceEngine)>
+_bootFull() async {
   final avatars = FakeAvatarStore();
   final engine = FakeVoiceEngine();
   final controller = ConversationController(
     engine: engine,
-    brainFactory: () => BrainClient(
-      client: MockClient((_) async => throw StateError('不该发请求')),
-    ),
+    brainFactory: () =>
+        BrainClient(client: MockClient((_) async => throw StateError('不该发请求'))),
     history: MemoryMessageStore(),
     avatars: avatars,
-    segmenterFactory:
-        ({required int sampleRate, required AssistantConfig config}) async =>
-            FakeSegmenter(),
+    segmenterFactory: ({
+      required int sampleRate,
+      required AssistantConfig config,
+    }) async => FakeSegmenter(),
   );
   await controller.updateConfig(_twoProfiles());
   return (controller, avatars, engine);
 }
 
-Future<void> _pump(WidgetTester tester, ConversationController controller) async {
-  await tester.pumpWidget(
-    MaterialApp(home: SettingsPage(controller: controller)),
-  );
+Future<void> _pump(
+  WidgetTester tester,
+  ConversationController controller,
+) async {
+  await tester.pumpWidget(testApp(SettingsPage(controller: controller)));
   await tester.pumpAndSettle();
 }
 
@@ -153,8 +156,11 @@ void main() {
     await tester.tap(find.text('B').last);
     await tester.pumpAndSettle();
 
-    expect(_profile(controller, 'p_a').name, '改过的名字',
-        reason: '切走不落盘的话，用户敲进去的字就无声无息地没了');
+    expect(
+      _profile(controller, 'p_a').name,
+      '改过的名字',
+      reason: '切走不落盘的话，用户敲进去的字就无声无息地没了',
+    );
   });
 
   testWidgets('保存会写字段，也会把"去掉头像"落地成删文件', (tester) async {
@@ -179,8 +185,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(_profile(controller, 'p_a').avatarFile, isNull);
-    expect(avatars.removed, contains(oldName),
-        reason: '配置里不引用了，文件也得删 —— 不然每换一次就多一份永久垃圾');
+    expect(
+      avatars.removed,
+      contains(oldName),
+      reason: '配置里不引用了，文件也得删 —— 不然每换一次就多一份永久垃圾',
+    );
     expect(avatars.files.containsKey(oldName), isFalse);
   });
 
@@ -209,8 +218,7 @@ void main() {
     // 不用 find.bySemanticsLabel：那需要先 ensureSemantics，而这里要验的
     // 本来就是"那个图标在不在、它有没有说自己是关闭"
     final icon = tester.widget<Icon>(find.byIcon(Icons.power_settings_new));
-    expect(icon.semanticLabel, '已关闭',
-        reason: '一排 tab 里得一眼看出哪个是关着的');
+    expect(icon.semanticLabel, '已关闭', reason: '一排 tab 里得一眼看出哪个是关着的');
   });
 
   testWidgets('头像文件不见了也不会把设置页搞崩', (tester) async {
