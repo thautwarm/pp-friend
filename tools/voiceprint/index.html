@@ -9,8 +9,11 @@
 
   - 音频不会离开本机：解码、下混、重采样、推理全部在页面内完成，不上传
     服务器；录音只保存在当前标签页，刷新即清空。
-  - onnxruntime-web 已 vendored 到 vendor/onnxruntime-web/dist/，不依赖
-    CDN，便于离线/国内网络使用。页面必须通过本地 HTTP 服务打开
+  - onnxruntime-web 固定 1.30.0。线上优先从 jsDelivr 取 js 和 wasm
+    （wasm 压缩后约 4MB），失败就退回同目录的
+    vendor/onnxruntime-web/dist/。本地调试（localhost / file://）反过来，
+    先用本地，免得开发时还要联网。22MB 的模型超过 jsDelivr 的 GitHub
+    通道上限，继续从页面同源（GitHub Pages）拿。页面必须通过本地 HTTP 服务打开
     （例如在 tools/voiceprint 目录运行 python3 -m http.server），因为
     file:// 下浏览器禁止 fetch 模型；这种情况下可以手动选择 ecapa.onnx。
   - 默认模型路径 models/ecapa.onnx。契约：输入 wav，float32 [1, T]
@@ -326,8 +329,7 @@
   </section>
 </main>
 
-<!-- onnxruntime-web 使用本地 vendor 目录，不能换成 CDN。 -->
-<script src="vendor/onnxruntime-web/dist/ort.wasm.min.js"></script>
+<!-- onnxruntime-web 由下面的脚本按 CDN -> 本地 vendor 的顺序加载。 -->
 <script>
 (() => {
   "use strict";
@@ -422,14 +424,83 @@
   // ------------------------------------------------------------------
   // onnxruntime-web
   // ------------------------------------------------------------------
-  if (window.ort) {
-    // 必须是绝对 URL：ORT 会用动态 import() 去加载 .mjs，
-    // 相对路径会被当成裸模块名，解析失败。
-    ort.env.wasm.wasmPaths = new URL(
-      "vendor/onnxruntime-web/dist/", document.baseURI).href;
-    // 单线程：不需要 SharedArrayBuffer / COOP-COEP，python -m http.server 也能直接跑。
-    ort.env.wasm.numThreads = 1;
-    ort.env.logLevel = "error";
+  // 版本写死：js 和 wasm 必须同一个版本，换一个就得一起换。
+  const ORT_VERSION = "1.30.0";
+  const ORT_CDN_BASE = "https://cdn.jsdelivr.net/npm/onnxruntime-web@" +
+    ORT_VERSION + "/dist/";
+  // 必须是绝对 URL：ORT 会用动态 import() 去加载 .mjs，
+  // 相对路径会被当成裸模块名，解析失败。
+  const ORT_LOCAL_BASE = new URL(
+    "vendor/onnxruntime-web/dist/", document.baseURI).href;
+
+  function loadScript(src, timeoutMs) {
+    return new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      const timer = setTimeout(() => {
+        script.remove();
+        reject(new Error("脚本加载超时"));
+      }, timeoutMs);
+      script.src = src;
+      script.onload = () => { clearTimeout(timer); resolve(); };
+      script.onerror = () => {
+        clearTimeout(timer);
+        script.remove();
+        reject(new Error("脚本下载失败"));
+      };
+      document.head.appendChild(script);
+    });
+  }
+
+  // 只探一下 wasm 在不在。必须先探再加载 js：js 一旦跑起来 ort 就注册了，
+  // 这时候再换 wasmPaths 重来会留下半初始化的状态。
+  async function wasmReachable(url, timeoutMs) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(url, {
+        method: "HEAD",
+        signal: controller.signal,
+      });
+      return response.ok;
+    } catch (_) {
+      return false;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  // 线上：先 CDN，失败退本地。本地开发：先本地，省得每次都要联网。
+  async function setupOrt() {
+    const isLocalDev = location.protocol === "file:" ||
+      /^(localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0)?$/.test(location.hostname);
+    const bases = isLocalDev
+      ? [ORT_LOCAL_BASE, ORT_CDN_BASE]
+      : [ORT_CDN_BASE, ORT_LOCAL_BASE];
+    for (const base of bases) {
+      const fromCdn = base === ORT_CDN_BASE;
+      try {
+        if (fromCdn) {
+          const ok = await wasmReachable(
+            base + "ort-wasm-simd-threaded.wasm", 6000);
+          if (!ok) throw new Error("wasm 不可达");
+        }
+        if (!window.ort) {
+          await loadScript(base + "ort.wasm.min.js", fromCdn ? 8000 : 4000);
+        }
+        if (!window.ort) throw new Error("ort 没有注册");
+        ort.env.wasm.wasmPaths = base;
+        // 单线程：不需要 SharedArrayBuffer / COOP-COEP，
+        // python -m http.server 也能直接跑。
+        ort.env.wasm.numThreads = 1;
+        ort.env.logLevel = "error";
+        state.ortSource = fromCdn ? "cdn" : "local";
+        return true;
+      } catch (err) {
+        console.warn("onnxruntime 加载失败（" + (fromCdn ? "CDN" : "本地") +
+          "）：" + (err && err.message ? err.message : err));
+      }
+    }
+    return false;
   }
 
   async function fetchWithProgress(url, bar, textEl) {
@@ -1072,7 +1143,17 @@
 
   el.dlF32.disabled = true;
   el.dlJson.disabled = true;
-  initModel();
+  setModelStatus("加载中", "pending");
+  setProgress(el.modelProgress, el.modelProgressText, 0, "加载推理引擎");
+  setupOrt().then((ok) => {
+    if (!ok) {
+      setModelStatus("加载失败", "error");
+      setProgress(el.modelProgress, el.modelProgressText, 0, "引擎加载失败");
+      showError("推理引擎加载失败，请检查网络后刷新页面。");
+      return;
+    }
+    initModel();
+  });
 })();
 </script>
 </body>

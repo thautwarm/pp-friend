@@ -3,10 +3,12 @@
 给说话人门控注册目标说话人的声纹。浏览器里解码音频、算 192 维
 ECAPA-TDNN embedding，导出成 App 能直接读的 `spkemb.f32`。
 
-**全部计算都在本机浏览器内完成，音频不会上传，也不联网。**
-onnxruntime-web 1.30.0 的 JS/WASM 已经放在 `vendor/onnxruntime-web/dist/`
-（从 npm 包 `onnxruntime-web@1.30.0` 里取的 `ort.wasm.min.js` +
-`ort-wasm-simd-threaded.mjs/.wasm`），页面不访问任何 CDN。
+**全部计算都在本机浏览器内完成，音频不会上传。**
+onnxruntime-web 1.30.0 优先从 jsDelivr 加载（wasm 压缩后约 4 MiB），
+失败就退回 `vendor/onnxruntime-web/dist/`（从 npm 包里取的
+`ort.wasm.min.js` + `ort-wasm-simd-threaded.mjs/.wasm`）。localhost 和
+file:// 下顺序反过来，先用本地，开发时不需要联网。22 MiB 的模型超过
+jsDelivr 的 GitHub 通道上限，仍然从页面同源（GitHub Pages）加载。
 
 ## 目录
 
@@ -15,7 +17,7 @@ tools/voiceprint/
 ├── export_ecapa_onnx.py          # 一次性导出 + 强制验证脚本
 ├── quantize_ecapa_int8.py        # 导出 int8，给 App 内置用
 ├── index.html                    # 单文件页面（内联 CSS/JS）
-├── vendor/onnxruntime-web/dist/  # 本地 ORT 运行时（约 14 MiB，入库）
+├── vendor/onnxruntime-web/dist/  # 本地 ORT 运行时（约 14 MiB，入库，CDN 的保底）
 ├── README.md
 ├── .gitignore                    # 忽略 .venv / *.ckpt / *.onnx / 音频
 ├── models/
