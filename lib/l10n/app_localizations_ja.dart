@@ -153,7 +153,11 @@ class AppLocalizationsJa extends AppLocalizations {
   String get voiceprintNeeded => '先に声紋をインポートしてください';
 
   @override
-  String get openVoiceprintPage => '声紋登録ページを開く';
+  String get openVoiceprintPage => '声紋をローカルで作成してダウンロード';
+
+  @override
+  String get voiceprintOptionalHint =>
+      '任意です。声紋は他の人の声や雑音を除き、あなた自身の発話だけをエージェントに送るために使います。';
 
   @override
   String get reimportVoiceprint => '声紋を再インポート';

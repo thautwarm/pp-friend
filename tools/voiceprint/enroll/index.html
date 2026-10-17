@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title data-i18n="meta.title.enroll">声纹注册 · PP Friend</title>
+<title data-i18n="meta.title.enroll">声纹创建 · PP Friend</title>
 <meta name="description" data-i18n-attr="content:meta.desc.enroll"
       content="在浏览器本地为 PP Friend 注册声纹：录音或选择音频文件，计算 192 维 ECAPA 声纹并导出 spkemb.f32。音频不上传。">
 <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
@@ -51,8 +51,9 @@
 <main class="narrow">
   <header class="page-head">
     <div>
-      <h1 data-i18n="vp.title">声纹注册</h1>
+      <h1 data-i18n="vp.title">声纹创建</h1>
       <p class="sub" data-i18n="vp.sub">录一段语音，或选择音频文件。</p>
+      <p class="privacy" data-i18n="vp.optional">可选。声纹用来过滤别人的声音和杂音，只把你自己的话发给 agent；不创建也能正常使用。</p>
       <p class="privacy" data-i18n="vp.privacy">纯前端计算：音频不离开浏览器，声纹只保存到本机，不上传任何数据。页面可以保存到本地运行。</p>
     </div>
     <span id="modelStatus" class="pill pending" data-i18n="vp.model.loading">模型加载中</span>

@@ -176,7 +176,7 @@ class _SettingsPageState extends State<SettingsPage>
     );
   }
 
-  /// 注册页要在线跑 onnxruntime-web，只能开浏览器，不能内嵌。
+  /// 创建页要在线跑 onnxruntime-web，只能开浏览器，不能内嵌。
   /// 直接落到 /enroll/，不然用户还得在主页上再点一次。
   static const _voiceprintPageUrl =
       'https://thautwarm.github.io/pp-friend/enroll/';
@@ -501,6 +501,13 @@ class _SettingsPageState extends State<SettingsPage>
                     label: Text(l10n.deleteVoiceprint),
                   ),
               ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              l10n.voiceprintOptionalHint,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
             ),
             // 没导入声纹时这个数没有任何意义，先不占位置。
             if (widget.controller.hasVoiceprint) ...[

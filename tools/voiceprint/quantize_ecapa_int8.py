@@ -25,7 +25,7 @@
     fp32  84.8MB   0.3s 10.2ms   3s 37.3ms
     int8  23.1MB   0.3s  2.9ms   3s 17.6ms
     同一段音频 embedding 的 cosine：min 0.986 / mean 0.992
-    用 fp32 声纹注册、int8 探针比对，同人 cosine 平均只差 -0.006
+    用 fp32 创建声纹、int8 探针比对，同人 cosine 平均只差 -0.006
 
 所以注册用的 fp32 模型不用换，旧声纹继续有效。
 """

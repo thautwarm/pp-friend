@@ -158,7 +158,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get voiceprintNeeded => 'Import a voiceprint first';
 
   @override
-  String get openVoiceprintPage => 'Open voiceprint recording page';
+  String get openVoiceprintPage =>
+      'Create your voiceprint locally and download it';
+
+  @override
+  String get voiceprintOptionalHint =>
+      'Optional. The voiceprint filters out other voices and noise so only your own speech reaches the agent.';
 
   @override
   String get reimportVoiceprint => 'Replace voiceprint';

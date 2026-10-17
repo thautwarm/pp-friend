@@ -1,7 +1,7 @@
-# 项目网站与声纹注册工具（ECAPA）
+# 项目网站与声纹创建工具（ECAPA）
 
 这个目录同时是项目的静态网站源码：根目录是产品主页（中 / 英 / 日），
-`enroll/` 是声纹注册工具。给说话人门控注册目标说话人的声纹：浏览器里
+`enroll/` 是声纹创建工具。为说话人门控创建目标说话人的声纹：浏览器里
 解码音频、算 192 维 ECAPA-TDNN embedding，导出成 App 能直接读的
 `spkemb.f32`。
 
@@ -21,17 +21,17 @@ tools/voiceprint/
 ├── quantize_ecapa_int8.py        # 导出 int8，给 App 内置用
 ├── index.html                    # 产品主页（中 / 英 / 日）
 ├── brain-api/index.html          # Brain API 协议说明
-├── enroll/index.html             # 声纹注册工具页
+├── enroll/index.html             # 声纹创建工具页
 ├── assets/
 │   ├── i18n.js                   # 三语字典与切换逻辑
 │   ├── main.js                   # 主页初始化
 │   ├── site.css                  # 两页共享样式
-│   └── voiceprint.js             # 注册工具逻辑（原单文件页拆出）
+│   └── voiceprint.js             # 创建工具逻辑（原单文件页拆出）
 ├── vendor/onnxruntime-web/dist/  # 本地 ORT 运行时（约 14 MiB，入库，CDN 的保底）
 ├── README.md
 ├── .gitignore                    # 忽略 .venv / *.ckpt / *.onnx / 音频
 ├── models/
-│   ├── ecapa.onnx                # 导出产物，约 81 MiB，不入库（注册页用）
+│   ├── ecapa.onnx                # 导出产物，约 81 MiB，不入库（创建页用）
 │   ├── ecapa-int8.onnx           # 量化产物，约 23 MiB，不入库（App 用）
 │   └── spkrec-ecapa-voxceleb/    # 原始 SpeechBrain 模型，ckpt 不入库
 │       ├── hyperparams.yaml
@@ -155,7 +155,7 @@ data）。动态轴：输入 batch、time；输出 batch。
 
 ## int8 量化（App 内置的那份）
 
-本地开发时注册页用 fp32 模型；线上 gh-pages 为了体积用的是 int8 版
+本地开发时创建页用 fp32 模型；线上 gh-pages 为了体积用的是 int8 版
 （22 MB）。打进 APK 的也是量化版：
 
 ```bash
@@ -178,7 +178,7 @@ cd tools/voiceprint
 | fp32 | 84.8 MB | 10.2 ms | 37.3 ms | — |
 | int8 | 23.1 MB | 2.9 ms | 17.6 ms | min 0.986 / mean 0.992 |
 
-用 fp32 声纹注册、int8 探针比对，同人 cosine 平均只挪 -0.006，所以
+用 fp32 创建声纹、int8 探针比对，同人 cosine 平均只挪 -0.006，所以
 旧声纹不用重新录。
 * **`emb` 没有归一化**，L2 范数通常在 300–500。页面会先对多窗结果求平均，
   再做 L2 归一化后导出。Rust 侧 pVAD（`rust/src/pvad.rs`）读取文件后还会
@@ -200,11 +200,11 @@ let emb = out["emb"].try_extract_tensor::<f32>()?;      // [1, 192]
 cd tools/voiceprint
 python3 -m http.server 8000
 # 主页：  http://localhost:8000/
-# 注册页：http://localhost:8000/enroll/
+# 创建页：http://localhost:8000/enroll/
 ```
 
-主页和注册页共用 `assets/` 下的样式、脚本和 i18n 字典。站点的
-`vendor/`、`models/` 都在这个目录的根下，注册页用 `../vendor/` 和
+主页和创建页共用 `assets/` 下的样式、脚本和 i18n 字典。站点的
+`vendor/`、`models/` 都在这个目录的根下，创建页用 `../vendor/` 和
 `../models/` 引用，所以整目录部署到 GitHub Pages 时可直接用。
 
 `models/ecapa.onnx` 存在时页面自动加载。若直接用 `file://` 打开、或模型
@@ -212,7 +212,7 @@ python3 -m http.server 8000
 仍然不会上传。
 
 线上 gh-pages 部署的模型是 int8 版（22 MB，字节与 `models/ecapa-int8.onnx`
-一致）；本地这份 fp32 模型（81 MiB）也能直接跑注册页。两者算出的声纹
+一致）；本地这份 fp32 模型（81 MiB）也能直接跑创建页。两者算出的声纹
 cosine 平均差 0.006 左右，见下面的量化一节。
 
 ### 页面行为

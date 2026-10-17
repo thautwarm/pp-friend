@@ -361,8 +361,14 @@ abstract class AppLocalizations {
   /// No description provided for @openVoiceprintPage.
   ///
   /// In zh, this message translates to:
-  /// **'打开声纹录制页面'**
+  /// **'本地创建你的声纹并下载'**
   String get openVoiceprintPage;
+
+  /// No description provided for @voiceprintOptionalHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'可选。声纹用来过滤别人的声音和杂音，只把你自己的话发给 agent。'**
+  String get voiceprintOptionalHint;
 
   /// No description provided for @reimportVoiceprint.
   ///

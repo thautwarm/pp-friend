@@ -152,7 +152,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get voiceprintNeeded => '需要先导入声纹';
 
   @override
-  String get openVoiceprintPage => '打开声纹录制页面';
+  String get openVoiceprintPage => '本地创建你的声纹并下载';
+
+  @override
+  String get voiceprintOptionalHint => '可选。声纹用来过滤别人的声音和杂音，只把你自己的话发给 agent。';
 
   @override
   String get reimportVoiceprint => '重新导入声纹';

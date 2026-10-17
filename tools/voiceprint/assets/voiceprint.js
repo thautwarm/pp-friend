@@ -1,4 +1,4 @@
-/* PP Friend 声纹注册工具逻辑。
+/* PP Friend 声纹创建工具逻辑。
  * 由 tools/voiceprint/index.html 的内联脚本迁移而来：
  * 行为保持一致，所有界面文案走 PP_I18N 字典，路径改为相对站点根目录
  * （本页位于 enroll/，模型与 vendor 在站点根的 models/ 和 vendor/ 下）。

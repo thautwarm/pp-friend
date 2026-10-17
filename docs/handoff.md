@@ -182,7 +182,7 @@ STT 吃 16k，TTS 出 24k。
   或另一个人的，输出几乎不动。它能回答"这段像不像人在说话"，
   回答不了"是谁"。
 - 判定：一段话先去掉两端外扩，再从 Silero 的逐帧概率里挑出判为语音的
-  帧拼起来，最多取 3 秒，送进 ECAPA 算 embedding 和注册声纹的 cosine。
+  帧拼起来，最多取 3 秒，送进 ECAPA 算 embedding 和创建声纹的 cosine。
   低于 `pvadMinCosine`（默认 0.4）就**整段丢掉** —— 不上传、不进消息流。
   段中间的停顿是纯静音，混进去会稀释 embedding，说得越长、停顿越多，
   本人的 cosine 反而越低，所以必须跳过。
@@ -192,10 +192,10 @@ STT 吃 16k，TTS 出 24k。
   仓库分发，Rust 里的 pVAD 路径保留着，但默认没有模型可用。
 - 声纹：192 维，L2 归一化，768 字节的 `spkemb.f32`。注册网页和手机
   必须用同一个 checkpoint（SpeechBrain `spkrec-ecapa-voxceleb`），
-  换模型之后旧声纹就不能再比了。注册入口是 `tools/voiceprint/enroll/` 的
+  换模型之后旧声纹就不能再比了。创建入口是 `tools/voiceprint/enroll/` 的
   纯 JS 网页（onnxruntime-web，音频不出本机；线上在项目站点的 `/enroll/`），
   设置页用文件选择器导入。
-- 模型：注册页本地用 fp32、线上用 int8（22 MiB，避免 81 MiB 的下载），
+- 模型：创建页本地用 fp32、线上用 int8（22 MiB，避免 81 MiB 的下载），
   APK 用同一个 checkpoint 的 int8（23 MiB）。实测 embedding cosine min 0.986 / mean 0.992，同人判定
   分只挪 -0.006，旧声纹可以直接用。
 - 存储：声纹在应用私有目录 `voiceprint/spkemb.f32`，可随时删除。

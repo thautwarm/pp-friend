@@ -1,7 +1,7 @@
 # 说话人识别（声纹）
 
 只让本人的声音进入上行。Silero VAD 负责切句，ECAPA 声纹负责判断
-"这一段是不是本人"。注册入口是 `tools/voiceprint/enroll/` 网页，
+"这一段是不是本人"。创建入口是 `tools/voiceprint/enroll/` 网页，
 线上地址是 <https://thautwarm.github.io/pp-friend/enroll/>。
 
 ## 判定链路
@@ -11,7 +11,7 @@
    - 段中间的停顿是纯静音，混进 embedding 会把声纹拉偏，说得越长
      越容易认错。
    - 3 秒是硬上限，所以二十秒的话和五秒的话推理量一样。
-3. 送进 ECAPA，和注册声纹算 cosine。
+3. 送进 ECAPA，和创建声纹算 cosine。
 4. 够长的段（≥ 0.3 秒）以 cosine 为准，低于阈值整段丢掉：不上传、
    不进消息流。不足 0.3 秒的段不做比对；当前没有 pVAD 可用，直接放行。
 5. 推理失败只摘掉比对器，不影响断句和上传。
@@ -28,9 +28,9 @@ ECAPA embedding 的余弦。`pvad.onnx` 已不再随仓库分发。
 ## 声纹与模型
 
 - 声纹：192 维，L2 归一化，768 字节的 `spkemb.f32`。
-- checkpoint：SpeechBrain `spkrec-ecapa-voxceleb`。注册页和手机必须
+- checkpoint：SpeechBrain `spkrec-ecapa-voxceleb`。创建页和手机必须
   用同一个 checkpoint，换模型之后旧声纹就不能再比了。
-- 注册页用 fp32 模型（约 81 MiB，跑在本机，音频不外传）。
+- 创建页用 fp32 模型（约 81 MiB，跑在本机，音频不外传）。
 - App 内置 int8 模型（约 23 MiB），是同一份权重的静态量化版。
 
 ### 量化
@@ -44,7 +44,7 @@ reduce_range：
 | fp32 | 84.8 MB | 10.2 ms | 37.3 ms | — |
 | int8 | 23.1 MB | 2.9 ms | 17.6 ms | min 0.986 / mean 0.992 |
 
-用 fp32 声纹注册、int8 探针比对，同人 cosine 平均只挪 -0.006，所以
+用 fp32 创建声纹、int8 探针比对，同人 cosine 平均只挪 -0.006，所以
 旧声纹不用重录。
 
 两个必须处理的坑：

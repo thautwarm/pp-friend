@@ -19,10 +19,10 @@ A voice assistant you can talk to at any time, running on a brain in your own ho
 - **Barge-in**: if you start talking while the AI is speaking, it stops immediately; it reports "where I was cut off" to the brain instead of letting the brain think it finished
 - **Keeps running in the background**: switch apps or lock the screen and the conversation continues (a foreground service holds the recording)
 - **Local endpointing**: Silero VAD runs on the phone (Rust); only complete utterances are uploaded, not a continuous audio stream
-- **Speaker verification**: compares a registered voiceprint against each utterance with ECAPA cosine similarity; long enough utterances below the threshold are dropped entirely — family members' speech is neither uploaded nor added to the agent's context
+- **Speaker verification**: compares your voiceprint against each utterance with ECAPA cosine similarity; long enough utterances below the threshold are dropped entirely — family members' speech is neither uploaded nor added to the agent's context
 - **Multiple profiles**: each profile has its own brain configuration and history and can run concurrently; only the focused one plays audio, the others only record text
 
-## Project site and voiceprint enrollment
+## Project site and voiceprint creation
 
 Project site (product overview, architecture, privacy; Chinese / English / Japanese):
 
@@ -32,11 +32,11 @@ Want to write your own brain? Start with the protocol:
 
 **<https://thautwarm.github.io/pp-friend/brain-api/>**
 
-Speaker verification needs a voiceprint. Enrollment page:
+Speaker verification needs a voiceprint. Creation page:
 
 **<https://thautwarm.github.io/pp-friend/enroll/>**
 
-Record a short sample in the browser, download `spkemb.f32`, then import it in the app under **Settings → General → Speaker verification**. Recording and inference happen locally in the browser; audio is never uploaded. The site source lives in `tools/voiceprint`; the app also has an "Open voiceprint enrollment page" button.
+Record a short sample in the browser, download `spkemb.f32`, then import it in the app under **Settings → General → Speaker verification**. Recording and inference happen locally in the browser; audio is never uploaded. The site source lives in `tools/voiceprint`; the app also has a "Create your voiceprint locally and download it" button.
 
 ## Architecture
 
@@ -87,7 +87,7 @@ lib/            Dart side: configuration, sessions, storage, UI
 rust/           local endpointing (Silero VAD), speaker gating (ECAPA), frb bindings
 android/        native audio engine, foreground service, notifications
 assets/         model assets (ecapa.onnx, int8)
-tools/          build scripts, fake brain, voiceprint enrollment web page, icon generation
+tools/          build scripts, fake brain, voiceprint creation web page, icon generation
 docs/           design and protocol documents
 test/           unit tests
 ```
