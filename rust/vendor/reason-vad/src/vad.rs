@@ -5,6 +5,22 @@ use crate::{
     model::{FRAME_SIZE, SAMPLE_RATE, SileroVadModel},
 };
 
+/// 一帧（512 采样）的语音概率。
+///
+/// **本仓库的本地改动**（上游只暴露"最近一帧"）。保留逐帧历史是为了能
+/// 把一段话里真正在说话的帧拼出来 —— 段中间的停顿是静音，混进声纹比对
+/// 会把 embedding 拉偏。
+#[derive(Debug, Clone, Copy)]
+pub struct FrameProb {
+    pub start_sample: usize,
+    pub end_sample: usize,
+    pub probability: f32,
+}
+
+/// 逐帧历史最多留多少帧。512 采样一帧、16k 采样率，4096 帧约 131 秒，
+/// 而活动段最多 `max_speech_duration_s`，正常够用；再多也只是浪费内存。
+const MAX_FRAME_HISTORY: usize = 4096;
+
 pub(crate) struct StreamVad {
     model: SileroVadModel,
     threshold: f32,
@@ -16,6 +32,8 @@ pub(crate) struct StreamVad {
     /// 最近一帧的语音概率。**本仓库的本地改动**（上游没暴露），
     /// 用来在调试面板上观测模型对当前音频的判定，调阈值时最有用。
     last_probability: f32,
+    /// 最近若干帧的语音概率，见 [`FrameProb`]。
+    frame_probs: Vec<FrameProb>,
 }
 
 impl StreamVad {
@@ -34,11 +52,29 @@ impl StreamVad {
             last_speech_sample: None,
             processed_samples: 0,
             last_probability: 0.0,
+            frame_probs: Vec::new(),
         }
     }
 
     pub(crate) fn last_probability(&self) -> f32 {
         self.last_probability
+    }
+
+    pub(crate) fn frame_probs(&self) -> &[FrameProb] {
+        &self.frame_probs
+    }
+
+    fn record_frame(&mut self, start_sample: usize, end_sample: usize, probability: f32) {
+        // 一次丢一半而不是每帧丢一帧：摊下来是 O(1)，也不会每 32ms 做一次
+        // 几万字节的搬移。
+        if self.frame_probs.len() >= MAX_FRAME_HISTORY {
+            self.frame_probs.drain(..MAX_FRAME_HISTORY / 2);
+        }
+        self.frame_probs.push(FrameProb {
+            start_sample,
+            end_sample,
+            probability,
+        });
     }
 
     fn ms_to_samples(ms: u32) -> usize {
@@ -88,6 +124,7 @@ impl StreamVad {
         let frame_end = frame_start + frame_len;
         let mut emitted = None;
         self.last_probability = probability;
+        self.record_frame(frame_start, frame_end, probability);
 
         if probability >= self.threshold {
             if self.speech_start_sample.is_none() {
@@ -132,6 +169,7 @@ impl StreamVad {
         self.last_speech_sample = None;
         self.processed_samples = 0;
         self.last_probability = 0.0;
+        self.frame_probs.clear();
         self.model.reset_states(1);
     }
 

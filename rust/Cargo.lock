@@ -675,6 +675,7 @@ name = "rust_lib_pp_friend"
 version = "0.1.0"
 dependencies = [
  "flutter_rust_bridge",
+ "ort",
  "reason-vad",
 ]
 

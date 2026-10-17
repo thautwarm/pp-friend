@@ -7,7 +7,7 @@
 //! 抽象本身只有一个目的：切段、最短过滤、强制切句这些**逻辑**能用确定性的
 //! 假检测器测到，不必依赖模型对某段具体音频怎么判。
 
-use reason_vad::{ReasonVad, SpeechSegment};
+use reason_vad::{FrameProb, ReasonVad, SpeechSegment};
 
 // `Send + Sync` 不是可选的：handle 是 frb 的 opaque 类型，会被包进 `RwLock`，
 // 而 `RwLock<T>: Sync` 要求 `T: Send + Sync`。少一个 bound 编译就不过。
@@ -16,6 +16,14 @@ pub trait SpeechDetector: Send + Sync {
     fn flush(&mut self) -> Option<SpeechSegment>;
     fn is_speaking(&self) -> bool;
     fn last_probability(&self) -> f32;
+
+    /// 逐帧语音概率历史（含采样区间）。默认空 —— 假检测器不需要它。
+    ///
+    /// 用来在算声纹时跳过段内的静音帧。
+    fn frame_probabilities(&self) -> &[FrameProb] {
+        &[]
+    }
+
     fn reset(&mut self);
 }
 
@@ -31,6 +39,9 @@ impl SpeechDetector for ReasonVad {
     }
     fn last_probability(&self) -> f32 {
         ReasonVad::last_probability(self)
+    }
+    fn frame_probabilities(&self) -> &[FrameProb] {
+        ReasonVad::frame_probabilities(self)
     }
     fn reset(&mut self) {
         ReasonVad::reset(self)

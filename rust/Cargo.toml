@@ -13,6 +13,10 @@ members = ["vendor/reason-vad"]
 [dependencies]
 flutter_rust_bridge = "=2.13.0"
 reason-vad = { path = "vendor/reason-vad" }
+# 版本必须和 reason-vad 里那个**完全一致**，否则 cargo 会链接两份
+# ONNX Runtime，而 load-dynamic 只初始化其中一份的全局环境。
+# features 也保持一致（cargo 会合并同一版本的 feature）。
+ort = { version = "=2.0.0-rc.11", default-features = false, features = ["std", "ndarray", "load-dynamic"] }
 
 [lints.rust]
 # frb 的宏会生成 #[cfg(frb_expand)]（供 --expand 模式用），这个 cfg 名不在

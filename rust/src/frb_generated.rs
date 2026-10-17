@@ -40,7 +40,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 848408548;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 533939483;
 
 // Section: executor
 
@@ -48,6 +48,54 @@ flutter_rust_bridge::frb_generated_default_handler!();
 
 // Section: wire_funcs
 
+fn wire__crate__api__vad__SileroVadHandle_clear_pvad_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "SileroVadHandle_clear_pvad",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<SileroVadHandle>,
+            >>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let mut api_that_guard = None;
+                let decode_indices_ =
+                    flutter_rust_bridge::for_generated::lockable_compute_decode_order(vec![
+                        flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                            &api_that, 0, true,
+                        ),
+                    ]);
+                for i in decode_indices_ {
+                    match i {
+                        0 => api_that_guard = Some(api_that.lockable_decode_sync_ref_mut()),
+                        _ => unreachable!(),
+                    }
+                }
+                let mut api_that_guard = api_that_guard.unwrap();
+                let output_ok = Ok::<_, ()>({
+                    crate::api::vad::SileroVadHandle::clear_pvad(&mut *api_that_guard);
+                })?;
+                std::result::Result::Ok(output_ok)
+            })())
+        },
+    )
+}
 fn wire__crate__api__vad__SileroVadHandle_feed_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -222,6 +270,102 @@ fn wire__crate__api__vad__SileroVadHandle_new_impl(
         },
     )
 }
+fn wire__crate__api__vad__SileroVadHandle_pvad_enabled_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "SileroVadHandle_pvad_enabled",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<SileroVadHandle>,
+            >>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let mut api_that_guard = None;
+                let decode_indices_ =
+                    flutter_rust_bridge::for_generated::lockable_compute_decode_order(vec![
+                        flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                            &api_that, 0, false,
+                        ),
+                    ]);
+                for i in decode_indices_ {
+                    match i {
+                        0 => api_that_guard = Some(api_that.lockable_decode_sync_ref()),
+                        _ => unreachable!(),
+                    }
+                }
+                let api_that_guard = api_that_guard.unwrap();
+                let output_ok = Ok::<_, ()>(crate::api::vad::SileroVadHandle::pvad_enabled(
+                    &*api_that_guard,
+                ))?;
+                std::result::Result::Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__api__vad__SileroVadHandle_pvad_filtered_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "SileroVadHandle_pvad_filtered",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<SileroVadHandle>,
+            >>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let mut api_that_guard = None;
+                let decode_indices_ =
+                    flutter_rust_bridge::for_generated::lockable_compute_decode_order(vec![
+                        flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                            &api_that, 0, false,
+                        ),
+                    ]);
+                for i in decode_indices_ {
+                    match i {
+                        0 => api_that_guard = Some(api_that.lockable_decode_sync_ref()),
+                        _ => unreachable!(),
+                    }
+                }
+                let api_that_guard = api_that_guard.unwrap();
+                let output_ok = Ok::<_, ()>(crate::api::vad::SileroVadHandle::pvad_filtered(
+                    &*api_that_guard,
+                ))?;
+                std::result::Result::Ok(output_ok)
+            })())
+        },
+    )
+}
 fn wire__crate__api__vad__SileroVadHandle_reset_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -265,6 +409,114 @@ fn wire__crate__api__vad__SileroVadHandle_reset_impl(
                 let output_ok = Ok::<_, ()>({
                     crate::api::vad::SileroVadHandle::reset(&mut *api_that_guard);
                 })?;
+                std::result::Result::Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__api__vad__SileroVadHandle_set_pvad_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "SileroVadHandle_set_pvad",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<SileroVadHandle>,
+            >>::sse_decode(&mut deserializer);
+            let api_model = <Vec<u8>>::sse_decode(&mut deserializer);
+            let api_spkemb = <Vec<u8>>::sse_decode(&mut deserializer);
+            let api_cfg = <crate::api::vad::PvadGateConfig>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, String>((move || {
+                let mut api_that_guard = None;
+                let decode_indices_ =
+                    flutter_rust_bridge::for_generated::lockable_compute_decode_order(vec![
+                        flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                            &api_that, 0, true,
+                        ),
+                    ]);
+                for i in decode_indices_ {
+                    match i {
+                        0 => api_that_guard = Some(api_that.lockable_decode_sync_ref_mut()),
+                        _ => unreachable!(),
+                    }
+                }
+                let mut api_that_guard = api_that_guard.unwrap();
+                let output_ok = crate::api::vad::SileroVadHandle::set_pvad(
+                    &mut *api_that_guard,
+                    api_model,
+                    api_spkemb,
+                    api_cfg,
+                )?;
+                std::result::Result::Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__api__vad__SileroVadHandle_set_speaker_verifier_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "SileroVadHandle_set_speaker_verifier",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<SileroVadHandle>,
+            >>::sse_decode(&mut deserializer);
+            let api_model = <Vec<u8>>::sse_decode(&mut deserializer);
+            let api_spkemb = <Vec<u8>>::sse_decode(&mut deserializer);
+            let api_cfg = <crate::api::vad::SpeakerVerifyConfig>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, String>((move || {
+                let mut api_that_guard = None;
+                let decode_indices_ =
+                    flutter_rust_bridge::for_generated::lockable_compute_decode_order(vec![
+                        flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                            &api_that, 0, true,
+                        ),
+                    ]);
+                for i in decode_indices_ {
+                    match i {
+                        0 => api_that_guard = Some(api_that.lockable_decode_sync_ref_mut()),
+                        _ => unreachable!(),
+                    }
+                }
+                let mut api_that_guard = api_that_guard.unwrap();
+                let output_ok = crate::api::vad::SileroVadHandle::set_speaker_verifier(
+                    &mut *api_that_guard,
+                    api_model,
+                    api_spkemb,
+                    api_cfg,
+                )?;
                 std::result::Result::Ok(output_ok)
             })())
         },
@@ -346,10 +598,42 @@ impl SseDecode for bool {
     }
 }
 
+impl SseDecode for crate::api::vad::DroppedSegment {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_startMs = <u32>::sse_decode(deserializer);
+        let mut var_endMs = <u32>::sse_decode(deserializer);
+        let mut var_durationMs = <u32>::sse_decode(deserializer);
+        let mut var_pvadScore = <f32>::sse_decode(deserializer);
+        let mut var_pvadTargetRatio = <f32>::sse_decode(deserializer);
+        let mut var_speakerCos = <f32>::sse_decode(deserializer);
+        return crate::api::vad::DroppedSegment {
+            start_ms: var_startMs,
+            end_ms: var_endMs,
+            duration_ms: var_durationMs,
+            pvad_score: var_pvadScore,
+            pvad_target_ratio: var_pvadTargetRatio,
+            speaker_cos: var_speakerCos,
+        };
+    }
+}
+
 impl SseDecode for f32 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         deserializer.cursor.read_f32::<NativeEndian>().unwrap()
+    }
+}
+
+impl SseDecode for Vec<crate::api::vad::DroppedSegment> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::vad::DroppedSegment>::sse_decode(deserializer));
+        }
+        return ans_;
     }
 }
 
@@ -377,6 +661,29 @@ impl SseDecode for Vec<crate::api::vad::VadSegment> {
     }
 }
 
+impl SseDecode for Option<String> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<String>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for crate::api::vad::PvadGateConfig {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_threshold = <f32>::sse_decode(deserializer);
+        let mut var_minTargetRatio = <f32>::sse_decode(deserializer);
+        return crate::api::vad::PvadGateConfig {
+            threshold: var_threshold,
+            min_target_ratio: var_minTargetRatio,
+        };
+    }
+}
+
 impl SseDecode for crate::api::vad::SegmenterConfig {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -395,6 +702,18 @@ impl SseDecode for crate::api::vad::SegmenterConfig {
             min_speech_ms: var_minSpeechMs,
             max_speech_ms: var_maxSpeechMs,
             ring_capacity_ms: var_ringCapacityMs,
+        };
+    }
+}
+
+impl SseDecode for crate::api::vad::SpeakerVerifyConfig {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_minCosine = <f32>::sse_decode(deserializer);
+        let mut var_minVerifyMs = <u32>::sse_decode(deserializer);
+        return crate::api::vad::SpeakerVerifyConfig {
+            min_cosine: var_minCosine,
+            min_verify_ms: var_minVerifyMs,
         };
     }
 }
@@ -433,12 +752,24 @@ impl SseDecode for crate::api::vad::VadFeedResult {
         let mut var_segments = <Vec<crate::api::vad::VadSegment>>::sse_decode(deserializer);
         let mut var_bufferedMs = <u32>::sse_decode(deserializer);
         let mut var_droppedMs = <u32>::sse_decode(deserializer);
+        let mut var_pvadEnabled = <bool>::sse_decode(deserializer);
+        let mut var_pvadProb = <f32>::sse_decode(deserializer);
+        let mut var_speakerVerifyEnabled = <bool>::sse_decode(deserializer);
+        let mut var_speakerCos = <f32>::sse_decode(deserializer);
+        let mut var_filtered = <Vec<crate::api::vad::DroppedSegment>>::sse_decode(deserializer);
+        let mut var_pvadError = <Option<String>>::sse_decode(deserializer);
         return crate::api::vad::VadFeedResult {
             speaking: var_speaking,
             prob: var_prob,
             segments: var_segments,
             buffered_ms: var_bufferedMs,
             dropped_ms: var_droppedMs,
+            pvad_enabled: var_pvadEnabled,
+            pvad_prob: var_pvadProb,
+            speaker_verify_enabled: var_speakerVerifyEnabled,
+            speaker_cos: var_speakerCos,
+            filtered: var_filtered,
+            pvad_error: var_pvadError,
         };
     }
 }
@@ -453,6 +784,9 @@ impl SseDecode for crate::api::vad::VadSegment {
         let mut var_durationMs = <u32>::sse_decode(deserializer);
         let mut var_forcedCut = <bool>::sse_decode(deserializer);
         let mut var_truncated = <bool>::sse_decode(deserializer);
+        let mut var_pvadScore = <f32>::sse_decode(deserializer);
+        let mut var_pvadTargetRatio = <f32>::sse_decode(deserializer);
+        let mut var_speakerCos = <f32>::sse_decode(deserializer);
         return crate::api::vad::VadSegment {
             pcm16le: var_pcm16Le,
             sample_rate: var_sampleRate,
@@ -461,6 +795,9 @@ impl SseDecode for crate::api::vad::VadSegment {
             duration_ms: var_durationMs,
             forced_cut: var_forcedCut,
             truncated: var_truncated,
+            pvad_score: var_pvadScore,
+            pvad_target_ratio: var_pvadTargetRatio,
+            speaker_cos: var_speakerCos,
         };
     }
 }
@@ -481,7 +818,7 @@ fn pde_ffi_dispatcher_primary_impl(
 ) {
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
-        6 => {
+        11 => {
             wire__crate__api__vad__segmenter_config_default_impl(port, ptr, rust_vec_len, data_len)
         }
         _ => unreachable!(),
@@ -496,11 +833,20 @@ fn pde_ffi_dispatcher_sync_impl(
 ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
-        1 => wire__crate__api__vad__SileroVadHandle_feed_impl(ptr, rust_vec_len, data_len),
-        2 => wire__crate__api__vad__SileroVadHandle_forced_cuts_impl(ptr, rust_vec_len, data_len),
-        3 => wire__crate__api__vad__SileroVadHandle_is_speaking_impl(ptr, rust_vec_len, data_len),
-        4 => wire__crate__api__vad__SileroVadHandle_new_impl(ptr, rust_vec_len, data_len),
-        5 => wire__crate__api__vad__SileroVadHandle_reset_impl(ptr, rust_vec_len, data_len),
+        1 => wire__crate__api__vad__SileroVadHandle_clear_pvad_impl(ptr, rust_vec_len, data_len),
+        2 => wire__crate__api__vad__SileroVadHandle_feed_impl(ptr, rust_vec_len, data_len),
+        3 => wire__crate__api__vad__SileroVadHandle_forced_cuts_impl(ptr, rust_vec_len, data_len),
+        4 => wire__crate__api__vad__SileroVadHandle_is_speaking_impl(ptr, rust_vec_len, data_len),
+        5 => wire__crate__api__vad__SileroVadHandle_new_impl(ptr, rust_vec_len, data_len),
+        6 => wire__crate__api__vad__SileroVadHandle_pvad_enabled_impl(ptr, rust_vec_len, data_len),
+        7 => wire__crate__api__vad__SileroVadHandle_pvad_filtered_impl(ptr, rust_vec_len, data_len),
+        8 => wire__crate__api__vad__SileroVadHandle_reset_impl(ptr, rust_vec_len, data_len),
+        9 => wire__crate__api__vad__SileroVadHandle_set_pvad_impl(ptr, rust_vec_len, data_len),
+        10 => wire__crate__api__vad__SileroVadHandle_set_speaker_verifier_impl(
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
         _ => unreachable!(),
     }
 }
@@ -522,6 +868,52 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<SileroVadHandle>> for SileroVa
     }
 }
 
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::vad::DroppedSegment {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.start_ms.into_into_dart().into_dart(),
+            self.end_ms.into_into_dart().into_dart(),
+            self.duration_ms.into_into_dart().into_dart(),
+            self.pvad_score.into_into_dart().into_dart(),
+            self.pvad_target_ratio.into_into_dart().into_dart(),
+            self.speaker_cos.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::vad::DroppedSegment
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::vad::DroppedSegment>
+    for crate::api::vad::DroppedSegment
+{
+    fn into_into_dart(self) -> crate::api::vad::DroppedSegment {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::vad::PvadGateConfig {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.threshold.into_into_dart().into_dart(),
+            self.min_target_ratio.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::vad::PvadGateConfig
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::vad::PvadGateConfig>
+    for crate::api::vad::PvadGateConfig
+{
+    fn into_into_dart(self) -> crate::api::vad::PvadGateConfig {
+        self
+    }
+}
 // Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::vad::SegmenterConfig {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
@@ -549,6 +941,27 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::vad::SegmenterConfig>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::vad::SpeakerVerifyConfig {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.min_cosine.into_into_dart().into_dart(),
+            self.min_verify_ms.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::vad::SpeakerVerifyConfig
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::vad::SpeakerVerifyConfig>
+    for crate::api::vad::SpeakerVerifyConfig
+{
+    fn into_into_dart(self) -> crate::api::vad::SpeakerVerifyConfig {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::vad::VadFeedResult {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -557,6 +970,12 @@ impl flutter_rust_bridge::IntoDart for crate::api::vad::VadFeedResult {
             self.segments.into_into_dart().into_dart(),
             self.buffered_ms.into_into_dart().into_dart(),
             self.dropped_ms.into_into_dart().into_dart(),
+            self.pvad_enabled.into_into_dart().into_dart(),
+            self.pvad_prob.into_into_dart().into_dart(),
+            self.speaker_verify_enabled.into_into_dart().into_dart(),
+            self.speaker_cos.into_into_dart().into_dart(),
+            self.filtered.into_into_dart().into_dart(),
+            self.pvad_error.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -583,6 +1002,9 @@ impl flutter_rust_bridge::IntoDart for crate::api::vad::VadSegment {
             self.duration_ms.into_into_dart().into_dart(),
             self.forced_cut.into_into_dart().into_dart(),
             self.truncated.into_into_dart().into_dart(),
+            self.pvad_score.into_into_dart().into_dart(),
+            self.pvad_target_ratio.into_into_dart().into_dart(),
+            self.speaker_cos.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -628,10 +1050,32 @@ impl SseEncode for bool {
     }
 }
 
+impl SseEncode for crate::api::vad::DroppedSegment {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u32>::sse_encode(self.start_ms, serializer);
+        <u32>::sse_encode(self.end_ms, serializer);
+        <u32>::sse_encode(self.duration_ms, serializer);
+        <f32>::sse_encode(self.pvad_score, serializer);
+        <f32>::sse_encode(self.pvad_target_ratio, serializer);
+        <f32>::sse_encode(self.speaker_cos, serializer);
+    }
+}
+
 impl SseEncode for f32 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         serializer.cursor.write_f32::<NativeEndian>(self).unwrap();
+    }
+}
+
+impl SseEncode for Vec<crate::api::vad::DroppedSegment> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::vad::DroppedSegment>::sse_encode(item, serializer);
+        }
     }
 }
 
@@ -655,6 +1099,24 @@ impl SseEncode for Vec<crate::api::vad::VadSegment> {
     }
 }
 
+impl SseEncode for Option<String> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <String>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for crate::api::vad::PvadGateConfig {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <f32>::sse_encode(self.threshold, serializer);
+        <f32>::sse_encode(self.min_target_ratio, serializer);
+    }
+}
+
 impl SseEncode for crate::api::vad::SegmenterConfig {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -665,6 +1127,14 @@ impl SseEncode for crate::api::vad::SegmenterConfig {
         <u32>::sse_encode(self.min_speech_ms, serializer);
         <u32>::sse_encode(self.max_speech_ms, serializer);
         <u32>::sse_encode(self.ring_capacity_ms, serializer);
+    }
+}
+
+impl SseEncode for crate::api::vad::SpeakerVerifyConfig {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <f32>::sse_encode(self.min_cosine, serializer);
+        <u32>::sse_encode(self.min_verify_ms, serializer);
     }
 }
 
@@ -705,6 +1175,12 @@ impl SseEncode for crate::api::vad::VadFeedResult {
         <Vec<crate::api::vad::VadSegment>>::sse_encode(self.segments, serializer);
         <u32>::sse_encode(self.buffered_ms, serializer);
         <u32>::sse_encode(self.dropped_ms, serializer);
+        <bool>::sse_encode(self.pvad_enabled, serializer);
+        <f32>::sse_encode(self.pvad_prob, serializer);
+        <bool>::sse_encode(self.speaker_verify_enabled, serializer);
+        <f32>::sse_encode(self.speaker_cos, serializer);
+        <Vec<crate::api::vad::DroppedSegment>>::sse_encode(self.filtered, serializer);
+        <Option<String>>::sse_encode(self.pvad_error, serializer);
     }
 }
 
@@ -718,6 +1194,9 @@ impl SseEncode for crate::api::vad::VadSegment {
         <u32>::sse_encode(self.duration_ms, serializer);
         <bool>::sse_encode(self.forced_cut, serializer);
         <bool>::sse_encode(self.truncated, serializer);
+        <f32>::sse_encode(self.pvad_score, serializer);
+        <f32>::sse_encode(self.pvad_target_ratio, serializer);
+        <f32>::sse_encode(self.speaker_cos, serializer);
     }
 }
 

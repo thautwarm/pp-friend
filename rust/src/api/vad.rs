@@ -13,6 +13,7 @@ use reason_vad::{ReasonVad, ReasonVadConfig, SAMPLE_RATE_HZ, SpeechSegment};
 
 use crate::detector::SpeechDetector;
 use crate::dsp::{LinearResampler, SampleRing};
+use crate::pvad::{PvadConfig, SegmentScore, SpeakerGate, VerifyConfig};
 
 /// Silero 的工作采样率，写死。
 pub const TARGET_RATE: u32 = SAMPLE_RATE_HZ;
@@ -51,6 +52,28 @@ impl Default for SegmenterConfig {
     }
 }
 
+/// 说话人门控参数。只有挂了 pVAD 才有意义。
+#[derive(Debug, Clone, Copy)]
+pub struct PvadGateConfig {
+    /// 单帧判为"目标人"的阈值，0~1。
+    pub threshold: f32,
+    /// 一段里目标帧占比达到多少才保留，0~1。
+    ///
+    /// 低于它的段会被**整段丢掉**：不上传、不进消息流。这是有意的 ——
+    /// 家人说话不该出现在 agent 的上下文里。
+    pub min_target_ratio: f32,
+}
+
+/// 整段声纹比对参数（ECAPA cosine）。
+#[derive(Debug, Clone, Copy)]
+pub struct SpeakerVerifyConfig {
+    /// 和注册声纹的 cosine 低于它就丢掉这一段。同一个人的跨录音通常 > 0.5，
+    /// 不同人通常 < 0.3，0.4 左右是安全的分界。
+    pub min_cosine: f32,
+    /// 短于此长度的段不比声纹，退回 pVAD。太短的 embedding 不稳。
+    pub min_verify_ms: u32,
+}
+
 /// 一段切好的话，自带音频。
 #[derive(Debug, Clone)]
 pub struct VadSegment {
@@ -65,6 +88,23 @@ pub struct VadSegment {
     pub forced_cut: bool,
     /// 这一段的开头已经被环形缓冲挤掉了（说明缓冲配小了）。正常情况恒为 false。
     pub truncated: bool,
+    /// pVAD 平滑概率的段内均值。没挂声纹门控时是 -1。
+    pub pvad_score: f32,
+    /// 段内被判为目标人的帧占比，0~1。没挂门控时是 -1。
+    pub pvad_target_ratio: f32,
+    /// 这一段和注册声纹的 cosine。没比或太短时是 -1。
+    pub speaker_cos: f32,
+}
+
+/// 被说话人门控丢掉的一段。音频不传，只留元数据给调试面板。
+#[derive(Debug, Clone)]
+pub struct DroppedSegment {
+    pub start_ms: u32,
+    pub end_ms: u32,
+    pub duration_ms: u32,
+    pub pvad_score: f32,
+    pub pvad_target_ratio: f32,
+    pub speaker_cos: f32,
 }
 
 /// 每次喂音频的结果。
@@ -79,6 +119,18 @@ pub struct VadFeedResult {
     pub buffered_ms: u32,
     /// 累计被缓冲挤掉多少毫秒音频（正常应该恒为 0）。
     pub dropped_ms: u32,
+    /// 这一帧之后说话人门控是否生效。
+    pub pvad_enabled: bool,
+    /// 最近一帧的 pVAD 平滑概率。没挂门控时是 0。
+    pub pvad_prob: f32,
+    /// 是否挂了整段声纹比对（ECAPA）。
+    pub speaker_verify_enabled: bool,
+    /// 最近一段的声纹 cosine。还没比过时是 -1。
+    pub speaker_cos: f32,
+    /// 这一次 feed 里因为不是目标人而被丢掉的段。
+    pub filtered: Vec<DroppedSegment>,
+    /// 门控挂了的原因（推理失败、模型不兼容）。非空时 `pvad_enabled` 一定是 false。
+    pub pvad_error: Option<String>,
 }
 
 /// 有状态、流式的断句器。Dart 侧一个会话持有一个。
@@ -96,6 +148,10 @@ pub struct SileroVadHandle {
     /// 本次会话已经喂进来多少 16k 采样（= 下一个绝对下标）。
     seen: usize,
     forced_cuts: usize,
+    /// 说话人门控。默认没挂模型，`enabled()` 为 false，行为和不集成 pVAD 时完全一样。
+    gate: SpeakerGate,
+    /// 最近一段的声纹 cosine，调试面板用。没比过时是 -1。
+    last_cos: f32,
     // 复用缓冲，避免每帧分配。
     resampled: Vec<i16>,
     frames: Vec<f32>,
@@ -134,6 +190,77 @@ impl SileroVadHandle {
         self.run_start = None;
         self.seen = 0;
         self.forced_cuts = 0;
+        self.last_cos = -1.0;
+        self.gate.reset();
+    }
+
+    /// 挂上说话人门控（pVAD）。
+    ///
+    /// `model` 是 `pvad.onnx` 的字节，`spkemb` 是 192 个 little-endian f32
+    /// （768 字节，由网页端或 Python 注册工具生成）。
+    ///
+    /// **必须在开始喂音频之前调完**：这一步要加载 3.9MB 模型并做图优化，
+    /// 是几十到几百毫秒的开销。
+    #[frb(sync)]
+    pub fn set_pvad(
+        &mut self,
+        model: Vec<u8>,
+        spkemb: Vec<u8>,
+        cfg: PvadGateConfig,
+    ) -> Result<(), String> {
+        let emb = crate::pvad::parse_spkemb(&spkemb)?;
+        let scorer = crate::pvad::PvadScorer::new(&model, &emb)?;
+        self.gate.attach(
+            Box::new(scorer),
+            PvadConfig {
+                threshold: cfg.threshold,
+                min_target_ratio: cfg.min_target_ratio,
+            },
+        );
+        Ok(())
+    }
+
+    /// 挂上整段声纹比对（ECAPA cosine）。
+    ///
+    /// 和 [`Self::set_pvad`] 可以同时挂：够长的段以 cosine 为准，短段退回 pVAD。
+    /// `model` 是 `ecapa.onnx`（约 81 MiB）的字节，`spkemb` 是网页导出的 768 字节。
+    ///
+    /// **必须在开始喂音频之前调完**：加载 81 MiB 模型是秒级的开销。
+    #[frb(sync)]
+    pub fn set_speaker_verifier(
+        &mut self,
+        model: Vec<u8>,
+        spkemb: Vec<u8>,
+        cfg: SpeakerVerifyConfig,
+    ) -> Result<(), String> {
+        let emb = crate::pvad::parse_spkemb(&spkemb)?;
+        let verifier = crate::ecapa::EcapaVerifier::new(&model, &emb)?;
+        self.gate.attach_verifier(
+            Box::new(verifier),
+            VerifyConfig {
+                min_cosine: cfg.min_cosine.clamp(0.0, 1.0),
+                min_samples: self.ms_to_samples(cfg.min_verify_ms),
+            },
+        );
+        Ok(())
+    }
+
+    /// 摘掉门控。摘掉之后所有段都放行。
+    #[frb(sync)]
+    pub fn clear_pvad(&mut self) {
+        self.gate.detach();
+    }
+
+    /// 门控是否生效。推理失败之后会变成 false。
+    #[frb(sync)]
+    pub fn pvad_enabled(&self) -> bool {
+        self.gate.enabled()
+    }
+
+    /// 累计被判定为"不是目标人"而丢掉的段数。
+    #[frb(sync)]
+    pub fn pvad_filtered(&self) -> u32 {
+        self.gate.filtered()
     }
 
     #[frb(sync)]
@@ -159,6 +286,8 @@ impl SileroVadHandle {
             run_start: None,
             seen: 0,
             forced_cuts: 0,
+            gate: SpeakerGate::default(),
+            last_cos: -1.0,
             resampled: Vec::new(),
             frames: Vec::new(),
         }
@@ -190,7 +319,7 @@ impl SileroVadHandle {
 
         let chunk_len = self.resampled.len();
         if chunk_len == 0 {
-            return Ok(self.result(Vec::new()));
+            return Ok(self.result(Vec::new(), Vec::new()));
         }
 
         // 3. 进环形缓冲。必须在 process_pcm 之前 —— 这样段偏移量的终点一定
@@ -203,17 +332,27 @@ impl SileroVadHandle {
         self.frames
             .extend(self.resampled.iter().map(|&s| s as f32 / 32768.0));
 
-        // 5. 喂模型。返回的是**绝对采样偏移量**（相对上次 reset）。
+        // 5. 喂 pVAD。和 Silero 共享同一份 16k 采样 —— 两边各自重采样的话
+        //    相位会漂，段和概率就对不上了。
+        self.gate.push(&self.frames, self.seen - chunk_len);
+
+        // 6. 喂模型。返回的是**绝对采样偏移量**（相对上次 reset）。
         let raw_segments = self.detector.process_pcm(&self.frames)?;
 
         let mut out = Vec::new();
+        let mut filtered = Vec::new();
         for seg in raw_segments {
-            if let Some(s) = self.materialize(seg, false) {
-                out.push(s);
+            if let Some((s, score, cos)) = self.materialize(seg, false) {
+                if self.gate.is_target(score, cos) {
+                    out.push(s);
+                } else {
+                    filtered.push(dropped(&s, score));
+                    self.gate.mark_filtered();
+                }
             }
         }
 
-        // 6. 强制切句。crate 的流式路径**不**做这件事（`max_speech_duration_s`
+        // 7. 强制切句。crate 的流式路径**不**做这件事（`max_speech_duration_s`
         //    只有离线 `detect_segments` 用），所以必须自己做，否则一口气说下去
         //    永远不结束，缓冲也会一直涨。
         let max_samples = self.ms_to_samples(self.cfg.max_speech_ms);
@@ -221,9 +360,14 @@ impl SileroVadHandle {
             if let Some(rs) = self.run_start {
                 if self.seen.saturating_sub(rs) >= max_samples {
                     if let Some(seg) = self.detector.flush() {
-                        if let Some(s) = self.materialize(seg, true) {
-                            out.push(s);
-                            self.forced_cuts += 1;
+                        if let Some((s, score, cos)) = self.materialize(seg, true) {
+                            if self.gate.is_target(score, cos) {
+                                out.push(s);
+                                self.forced_cuts += 1;
+                            } else {
+                                filtered.push(dropped(&s, score));
+                                self.gate.mark_filtered();
+                            }
                         }
                     }
                 }
@@ -240,10 +384,14 @@ impl SileroVadHandle {
             self.run_start = Some(self.seen.saturating_sub(chunk_len));
         }
 
-        Ok(self.result(out))
+        Ok(self.result(out, filtered))
     }
 
-    fn result(&self, segments: Vec<VadSegment>) -> VadFeedResult {
+    fn result(
+        &self,
+        segments: Vec<VadSegment>,
+        filtered: Vec<DroppedSegment>,
+    ) -> VadFeedResult {
         let per_ms = self.samples_per_ms().max(1);
         VadFeedResult {
             speaking: self.detector.is_speaking(),
@@ -251,13 +399,61 @@ impl SileroVadHandle {
             segments,
             buffered_ms: (self.ring.len() / per_ms) as u32,
             dropped_ms: (self.ring.dropped() / per_ms) as u32,
+            pvad_enabled: self.gate.enabled(),
+            pvad_prob: self.gate.last(),
+            speaker_verify_enabled: self.gate.verify_enabled(),
+            speaker_cos: self.last_cos,
+            filtered,
+            pvad_error: self.gate.error().map(str::to_string),
+        }
+    }
+
+    /// 拼出送进 ECAPA 的那段音频。
+    ///
+    /// 一句话中间停顿的地方是纯静音。整段直接送进去，静音会按长度比例稀释
+    /// embedding —— 说得越长、停顿越多，同一个人的 cosine 反而越低。这里只
+    /// 取 Silero 判为语音的帧，最多 [`crate::ecapa::MAX_VERIFY_SAMPLES`] 个采样。
+    ///
+    /// 挑出来的语音不足门控要求的最短长度时退回整段：短句本来就没多少静音，
+    /// 而且不能因为"挑不出东西"就把门控变成"没有数据就全丢"。
+    fn verify_audio(&self, samples: &[i16], from: usize, to: usize) -> Vec<f32> {
+        let mut voiced: Vec<f32> = Vec::new();
+        for frame in self.detector.frame_probabilities() {
+            if frame.probability < self.cfg.threshold {
+                continue;
+            }
+            // 帧是模型对齐的，不一定正好落在外扩之外的区间里，剪一下。
+            let a = frame.start_sample.max(from);
+            let b = frame.end_sample.min(to);
+            if b <= a {
+                continue;
+            }
+            let ia = a - from;
+            let ib = b - from;
+            if ib > samples.len() {
+                break;
+            }
+            voiced.extend(samples[ia..ib].iter().map(|&s| s as f32 / 32768.0));
+            if voiced.len() >= crate::ecapa::MAX_VERIFY_SAMPLES {
+                voiced.truncate(crate::ecapa::MAX_VERIFY_SAMPLES);
+                break;
+            }
+        }
+        if voiced.len() >= self.gate.min_verify_samples() {
+            voiced
+        } else {
+            samples.iter().map(|&s| s as f32 / 32768.0).collect()
         }
     }
 
     /// 把检测器返回的偏移量还原成一段带音频的结果。
     ///
     /// 返回 `None` 表示这一段太短，该丢。
-    fn materialize(&self, seg: SpeechSegment, forced_cut: bool) -> Option<VadSegment> {
+    fn materialize(
+        &mut self,
+        seg: SpeechSegment,
+        forced_cut: bool,
+    ) -> Option<(VadSegment, Option<SegmentScore>, Option<f32>)> {
         let pad = self.ms_to_samples(self.cfg.speech_pad_ms);
 
         // crate 对**两端**都做了 speech_pad 外扩，所以判长度要减掉两倍，
@@ -274,21 +470,68 @@ impl SileroVadHandle {
             return None;
         }
 
+        // 说话人打分只算**去掉两端外扩**的那一段。外扩是静音，pVAD 在静音上
+        // 给的本来就是低概率，算进去只会把本人的段也拉下来。
+        let score_from = (seg.start_sample + pad).min(seg.end_sample);
+        let score_to = seg
+            .end_sample
+            .saturating_sub(pad)
+            .max(score_from)
+            .min(self.seen);
+        let score = if score_to > score_from {
+            self.gate.score(score_from, score_to)
+        } else {
+            self.gate.score(seg.start_sample, seg.end_sample.min(self.seen))
+        };
+
+        // 整段声纹比对只用**去掉两端外扩**的语音；外扩是静音，会把 embedding
+        // 拉向"没人说话"的方向。`samples` 的下标是相对 `from` 的。
+        let cos = if score_to > score_from {
+            let a = score_from.saturating_sub(from).min(samples.len());
+            let b = score_to.saturating_sub(from).min(samples.len());
+            let verify = self.verify_audio(&samples[a..b], score_from, score_to);
+            let c = self.gate.verify(&verify);
+            if let Some(c) = c {
+                self.last_cos = c;
+            }
+            c
+        } else {
+            None
+        };
+
         let per_ms = self.samples_per_ms().max(1);
         let mut pcm16le = Vec::with_capacity(samples.len() * 2);
         for s in samples {
             pcm16le.extend_from_slice(&s.to_le_bytes());
         }
 
-        Some(VadSegment {
-            pcm16le,
-            sample_rate: TARGET_RATE,
-            start_ms: (from / per_ms) as u32,
-            end_ms: (to / per_ms) as u32,
-            duration_ms: ((to - from) / per_ms) as u32,
-            forced_cut,
-            truncated,
-        })
+        Some((
+            VadSegment {
+                pcm16le,
+                sample_rate: TARGET_RATE,
+                start_ms: (from / per_ms) as u32,
+                end_ms: (to / per_ms) as u32,
+                duration_ms: ((to - from) / per_ms) as u32,
+                forced_cut,
+                truncated,
+                pvad_score: score.map(|s| s.mean).unwrap_or(-1.0),
+                pvad_target_ratio: score.map(|s| s.target_ratio).unwrap_or(-1.0),
+                speaker_cos: cos.unwrap_or(-1.0),
+            },
+            score,
+            cos,
+        ))
+    }
+}
+
+fn dropped(segment: &VadSegment, score: Option<SegmentScore>) -> DroppedSegment {
+    DroppedSegment {
+        start_ms: segment.start_ms,
+        end_ms: segment.end_ms,
+        duration_ms: segment.duration_ms,
+        pvad_score: score.map(|s| s.mean).unwrap_or(-1.0),
+        pvad_target_ratio: score.map(|s| s.target_ratio).unwrap_or(-1.0),
+        speaker_cos: segment.speaker_cos,
     }
 }
 
@@ -296,7 +539,8 @@ impl SileroVadHandle {
 mod tests {
     use super::*;
     use crate::detector::SpeechDetector;
-    use reason_vad::SpeechSegment;
+    use reason_vad::{FrameProb, SpeechSegment};
+    use std::sync::{Arc, Mutex};
 
     /// 可脚本化的假检测器：按预设的"概率序列"决定什么时候算说话，
     /// 让切段/过滤/强制切句的逻辑能被确定性地测到，不依赖模型。
@@ -311,6 +555,7 @@ mod tests {
         processed: usize,
         min_silence_samples: usize,
         pad: usize,
+        frames: Vec<FrameProb>,
     }
 
     impl FakeDetector {
@@ -325,6 +570,7 @@ mod tests {
                 processed: 0,
                 min_silence_samples: min_silence_ms as usize * 16,
                 pad: pad_ms as usize * 16,
+                frames: Vec::new(),
             }
         }
 
@@ -350,6 +596,11 @@ mod tests {
                 self.pos += 1;
                 let frame_start = self.processed;
                 let frame_end = frame_start + take;
+                self.frames.push(FrameProb {
+                    start_sample: frame_start,
+                    end_sample: frame_end,
+                    probability: p,
+                });
                 if p >= self.threshold {
                     if self.speech_start.is_none() {
                         self.speech_start = Some(frame_start);
@@ -389,6 +640,10 @@ mod tests {
                 .unwrap_or(0.0)
         }
 
+        fn frame_probabilities(&self) -> &[FrameProb] {
+            &self.frames
+        }
+
         fn reset(&mut self) {
             self.reset_state();
         }
@@ -400,6 +655,7 @@ mod tests {
             self.speech_start = None;
             self.last_speech = None;
             self.processed = 0;
+            self.frames.clear();
         }
     }
 
@@ -570,6 +826,198 @@ mod tests {
         }
         // 这段"说话"只有 10ms，会被 min_speech=50 丢掉，但仍不该 panic
         assert!(h.forced_cuts() == 0);
+    }
+
+    // ---------------------------------------------------------- 说话人门控
+
+    /// 每帧固定吐同一个概率的假打分器。
+    struct FixedScorer(f32);
+
+    impl crate::pvad::SpeakerScorer for FixedScorer {
+        fn push(
+            &mut self,
+            samples: &[f32],
+            on_frame: &mut dyn FnMut(f32),
+        ) -> Result<(), String> {
+            for _ in 0..samples.len() / crate::pvad::FRAME_SAMPLES {
+                on_frame(self.0);
+            }
+            Ok(())
+        }
+
+        fn reset(&mut self) {}
+    }
+
+    fn handle_with_gate(fake: FakeDetector, cfg: SegmenterConfig, p: f32) -> SileroVadHandle {
+        let mut h = handle_with(fake, cfg);
+        h.gate.attach(
+            Box::new(FixedScorer(p)),
+            PvadConfig {
+                threshold: 0.5,
+                min_target_ratio: 0.5,
+            },
+        );
+        h
+    }
+
+    /// 一段 50ms 说话 + 100ms 静音，切出一段 50ms。
+    fn one_segment_cfg() -> SegmenterConfig {
+        SegmenterConfig {
+            min_silence_ms: 50,
+            speech_pad_ms: 0,
+            min_speech_ms: 10,
+            ..base_cfg()
+        }
+    }
+
+    fn one_segment_probs() -> Vec<f32> {
+        let mut p = vec![0.9; 5];
+        p.extend(vec![0.0; 10]);
+        p
+    }
+
+    #[test]
+    fn target_speaker_segment_passes_the_gate() {
+        let cfg = one_segment_cfg();
+        let fake = FakeDetector::new(one_segment_probs(), cfg.min_silence_ms, 0, cfg.threshold);
+        let mut h = handle_with_gate(fake, cfg, 0.95);
+
+        let r = h.feed(tone_bytes(1600)).unwrap();
+        assert_eq!(r.segments.len(), 1);
+        assert!(r.filtered.is_empty());
+        assert!(r.pvad_enabled);
+        assert!(r.segments[0].pvad_score > 0.9, "{}", r.segments[0].pvad_score);
+        assert_eq!(h.pvad_filtered(), 0);
+    }
+
+    #[test]
+    fn other_speaker_segment_is_dropped_before_it_reaches_dart() {
+        let cfg = one_segment_cfg();
+        let fake = FakeDetector::new(one_segment_probs(), cfg.min_silence_ms, 0, cfg.threshold);
+        let mut h = handle_with_gate(fake, cfg, 0.02);
+
+        let r = h.feed(tone_bytes(1600)).unwrap();
+        assert!(r.segments.is_empty(), "非目标段不能出现在 segments 里");
+        assert_eq!(r.filtered.len(), 1, "要能看见它被丢了");
+        assert_eq!(r.filtered[0].duration_ms, 50);
+        assert!(r.filtered[0].pvad_score < 0.1);
+        assert_eq!(h.pvad_filtered(), 1);
+    }
+
+    /// 记录最后一段输入长度的假比对器。
+    struct RecordingVerifier {
+        last_len: Arc<Mutex<usize>>,
+        cosine: f32,
+    }
+
+    impl crate::pvad::SpeakerVerifier for RecordingVerifier {
+        fn cosine(&mut self, samples: &[f32]) -> Result<f32, String> {
+            *self.last_len.lock().unwrap() = samples.len();
+            Ok(self.cosine)
+        }
+    }
+
+    #[test]
+    fn voiceprint_skips_silence_inside_a_segment() {
+        // 5 帧说话 + 3 帧停顿 + 5 帧说话。停顿只有 30ms，不够 min_silence(100ms)，
+        // 所以整段会被切成**一段**，停顿夹在段中间 —— 正是用户说的"说一半停一下"。
+        let mut probs = vec![0.9; 5];
+        probs.extend(vec![0.0; 3]);
+        probs.extend(vec![0.9; 5]);
+        probs.extend(vec![0.0; 10]);
+
+        let cfg = SegmenterConfig {
+            min_silence_ms: 100,
+            speech_pad_ms: 0,
+            min_speech_ms: 10,
+            ..base_cfg()
+        };
+        let fake = FakeDetector::new(probs, cfg.min_silence_ms, 0, cfg.threshold);
+        let mut h = handle_with(fake, cfg);
+
+        let last_len = Arc::new(Mutex::new(0usize));
+        h.gate.attach_verifier(
+            Box::new(RecordingVerifier {
+                last_len: last_len.clone(),
+                cosine: 0.66,
+            }),
+            crate::pvad::VerifyConfig {
+                min_cosine: 0.4,
+                // 50ms，故意设得比整段（130ms）短，让挑出来的 100ms 语音够用
+                min_samples: 800,
+            },
+        );
+
+        let r = h.feed(tone_bytes(23 * 160)).unwrap();
+        assert_eq!(r.segments.len(), 1, "停顿不该把一句话切成两段");
+        assert_eq!(r.segments[0].duration_ms, 130);
+        assert!((r.segments[0].speaker_cos - 0.66).abs() < 1e-6);
+
+        // 13 帧里有 3 帧静音，声纹输入只该拿到 10 帧 = 1600 采样。
+        assert_eq!(
+            *last_len.lock().unwrap(),
+            1600,
+            "段中间的静音不能被送进声纹比对"
+        );
+    }
+
+    #[test]
+    fn voiceprint_falls_back_to_the_whole_segment_when_too_little_voiced_audio() {
+        // 段里只有 10ms 被判为语音，但 min_samples 要求 50ms：挑出来的不够，
+        // 应该退回整段，而不是让 verify 静默地什么都不做。
+        let mut probs = vec![0.9];
+        probs.extend(vec![0.0; 2]); // 20ms 停顿，不够 min_silence(100ms)
+        probs.extend(vec![0.0; 10]);
+
+        let cfg = SegmenterConfig {
+            min_silence_ms: 100,
+            speech_pad_ms: 0,
+            min_speech_ms: 10,
+            ..base_cfg()
+        };
+        let fake = FakeDetector::new(probs, cfg.min_silence_ms, 0, cfg.threshold);
+        let mut h = handle_with(fake, cfg);
+
+        let last_len = Arc::new(Mutex::new(0usize));
+        h.gate.attach_verifier(
+            Box::new(RecordingVerifier {
+                last_len: last_len.clone(),
+                cosine: 0.5,
+            }),
+            crate::pvad::VerifyConfig {
+                min_cosine: 0.4,
+                min_samples: 800,
+            },
+        );
+
+        let r = h.feed(tone_bytes(13 * 160)).unwrap();
+        assert_eq!(r.segments.len(), 1);
+        // 段真的只有 10ms，比 min_samples 还短 —— verify 直接返回 None，
+        // 这里要确认的是**没有拿挑空的 Vec 去调它**（否则会拿到 -1 把段误杀）。
+        assert_eq!(*last_len.lock().unwrap(), 0, "太短的段不该调用比对器");
+    }
+
+    #[test]
+    fn without_a_scorer_nothing_is_filtered() {
+        let cfg = one_segment_cfg();
+        let fake = FakeDetector::new(one_segment_probs(), cfg.min_silence_ms, 0, cfg.threshold);
+        let mut h = handle_with(fake, cfg);
+        let r = h.feed(tone_bytes(1600)).unwrap();
+        assert_eq!(r.segments.len(), 1);
+        assert!(!r.pvad_enabled);
+        assert_eq!(r.segments[0].pvad_score, -1.0);
+        assert!(r.filtered.is_empty());
+    }
+
+    #[test]
+    fn reset_restarts_gate_state() {
+        let cfg = one_segment_cfg();
+        let fake = FakeDetector::new(one_segment_probs(), cfg.min_silence_ms, 0, cfg.threshold);
+        let mut h = handle_with_gate(fake, cfg, 0.02);
+        let _ = h.feed(tone_bytes(1600)).unwrap();
+        assert_eq!(h.pvad_filtered(), 1);
+        h.reset();
+        assert_eq!(h.pvad_filtered(), 0);
     }
 
     #[test]

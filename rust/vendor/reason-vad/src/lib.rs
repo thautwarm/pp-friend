@@ -16,6 +16,8 @@ use ndarray::ArrayView1;
 use model::{FRAME_SIZE, SAMPLE_RATE, SileroVadModel};
 use vad::StreamVad;
 
+pub use vad::FrameProb;
+
 pub const SAMPLE_RATE_HZ: u32 = SAMPLE_RATE;
 pub const FRAME_SAMPLES: usize = FRAME_SIZE;
 
@@ -156,6 +158,14 @@ impl ReasonVad {
     /// 最近一帧的语音概率（0.0~1.0）。**本仓库的本地改动**，上游未暴露。
     pub fn last_probability(&self) -> f32 {
         self.engine.last_probability()
+    }
+
+    /// 最近若干帧的语音概率和它们的采样区间。**本仓库的本地改动**。
+    ///
+    /// 坐标和 [`SpeechSegment`] 的 `start_sample` 是同一套（相对上次
+    /// `reset` 的绝对采样下标），可以直接用来切原始 PCM。
+    pub fn frame_probabilities(&self) -> &[FrameProb] {
+        self.engine.frame_probs()
     }
 
     /// Process one 512-sample frame and return a segment if one is closed.
