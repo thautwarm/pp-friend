@@ -6,6 +6,10 @@
 <title data-i18n="meta.title.home">PP Friend · 自托管的实时语音助手客户端</title>
 <meta name="description" data-i18n-attr="content:meta.desc.home"
       content="PP Friend 是自托管的实时语音助手客户端：手机只采音放音，识别、对话、合成都在你自己的服务端运行。">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="assets/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<meta name="theme-color" content="#5B6ABF">
 <link rel="stylesheet" href="assets/site.css">
 </head>
 <body>
@@ -13,7 +17,7 @@
   <a class="brand" href="./">PP Friend</a>
   <span class="spacer"></span>
   <a class="nav-link" href="brain-api/" data-i18n="nav.brainApi">Brain API</a>
-  <a class="nav-link" href="enroll/" data-i18n="nav.enroll">声纹注册</a>
+  <a class="nav-link" href="enroll/" data-i18n="nav.enroll">声纹创建</a>
   <a class="nav-link" href="https://github.com/thautwarm/pp-friend" data-i18n="nav.github">GitHub</a>
   <span id="langSwitch"></span>
 </nav>
@@ -218,7 +222,7 @@
     <p class="pp-caption-sub" data-i18n="h.hero.ppCaptionSub">四路并行：两边各推各拉，不是一问一答。</p>
     <p class="made" data-i18n="h.hero.made">这个项目本身的开发就是用 PP Friend 跑的：对着手机说话来驱动编码，需求、审查和修复一路靠语音说完。</p>
     <div class="cta">
-      <a class="button" href="enroll/" data-i18n="h.hero.ctaEnroll">打开声纹注册工具</a>
+      <a class="button" href="enroll/" data-i18n="h.hero.ctaEnroll">本地创建你的声纹并下载</a>
       <a class="button secondary" href="https://github.com/thautwarm/pp-friend" data-i18n="h.hero.ctaGithub">GitHub 仓库</a>
     </div>
   </header>
@@ -285,7 +289,7 @@
         <caption class="hint" style="text-align:left; padding: 14px 0 6px;" data-i18n="h.arch.stackTitle">技术栈</caption>
         <tr><th data-i18n="h.arch.row1.k">UI / 业务</th><td data-i18n="h.arch.row1.v">Flutter（Dart 3.13）</td></tr>
         <tr><th data-i18n="h.arch.row2.k">本地断句</th><td data-i18n="h.arch.row2.v">Rust + Silero VAD，flutter_rust_bridge 2.13</td></tr>
-        <tr><th data-i18n="h.arch.row3.k">声纹门控</th><td data-i18n="h.arch.row3.v">Rust + ECAPA（int8 ONNX，23 MB）；声纹由本站注册工具生成</td></tr>
+        <tr><th data-i18n="h.arch.row3.k">声纹门控</th><td data-i18n="h.arch.row3.v">Rust + ECAPA（int8 ONNX，23 MB）；声纹由本站创建并下载</td></tr>
         <tr><th data-i18n="h.arch.row4.k">音频引擎</th><td data-i18n="h.arch.row4.v">Android 原生（Kotlin）：AudioRecord / AudioTrack / AEC</td></tr>
         <tr><th data-i18n="h.arch.row5.k">上行 / 下行</th><td data-i18n="h.arch.row5.v">Ogg Opus 16 kHz 上行；Ogg Opus 24 kHz 下行，重采样到 16 kHz</td></tr>
         <tr><th data-i18n="h.arch.row6.k">与 brain 通信</th><td data-i18n="h.arch.row6.v">HTTP + MessagePack，两条独立长轮询循环</td></tr>
@@ -308,7 +312,7 @@
     <ul class="tick">
       <li data-i18n="h.privacy.i1">识别、对话、合成全部运行在你自己的服务端，音频不去第三方服务。</li>
       <li data-i18n="h.privacy.i2">声纹门控在手机本地完成：不够像本人的片段在上传之前就被丢弃。</li>
-      <li data-i18n="h.privacy.i3">声纹注册在浏览器里完成，录音和推理都不出本机（见本站声纹注册工具）。</li>
+      <li data-i18n="h.privacy.i3">声纹创建在浏览器里完成，录音和推理都不出本机（见本站声纹创建工具）。</li>
       <li data-i18n="h.privacy.i4">对话上下文在服务端，由 brain_id（人起的名字）区分；客户端只保存展示用历史。</li>
       <li data-i18n="h.privacy.i5">客户端与服务端之间用一个可选的 Bearer token 鉴权；token 为空表示该部署未启用鉴权。</li>
     </ul>
@@ -325,10 +329,10 @@ flutter build apk --release</pre>
   </section>
 
   <section class="block" id="enroll">
-    <h2 data-i18n="h.enroll.title">声纹注册工具</h2>
+    <h2 data-i18n="h.enroll.title">声纹创建工具</h2>
     <p class="lead" data-i18n="h.enroll.body">说话人识别需要一份本人声纹。在浏览器里录一段话或选一个音频文件，算出 192 维声纹并下载 spkemb.f32（768 字节，float32），再到 App 的设置 → 通用 → 说话人识别里导入。录音和推理都在浏览器本地完成，音频不上传。</p>
     <div class="row mt">
-      <a class="button" href="enroll/" data-i18n="h.enroll.button">打开声纹注册工具</a>
+      <a class="button" href="enroll/" data-i18n="h.enroll.button">本地创建你的声纹并下载</a>
     </div>
   </section>
 </main>
