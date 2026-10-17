@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../config/assistant_config.dart';
 import '../conversation/conversation_controller.dart';
@@ -58,16 +59,22 @@ class _SettingsPageState extends State<SettingsPage>
     super.initState();
     _tabs = TabController(length: 2, vsync: this);
     final config = widget.controller.config;
-    _vadMinSilenceMs =
-        TextEditingController(text: config.vadMinSilenceMs.toString());
+    _vadMinSilenceMs = TextEditingController(
+      text: config.vadMinSilenceMs.toString(),
+    );
     _vadThreshold = TextEditingController(text: config.vadThreshold.toString());
-    _vadSpeechPadMs =
-        TextEditingController(text: config.vadSpeechPadMs.toString());
-    _vadMinSpeechMs =
-        TextEditingController(text: config.vadMinSpeechMs.toString());
-    _vadMaxSpeechS = TextEditingController(text: config.vadMaxSpeechS.toString());
-    _pvadMinCosine =
-        TextEditingController(text: config.pvadMinCosine.toString());
+    _vadSpeechPadMs = TextEditingController(
+      text: config.vadSpeechPadMs.toString(),
+    );
+    _vadMinSpeechMs = TextEditingController(
+      text: config.vadMinSpeechMs.toString(),
+    );
+    _vadMaxSpeechS = TextEditingController(
+      text: config.vadMaxSpeechS.toString(),
+    );
+    _pvadMinCosine = TextEditingController(
+      text: config.pvadMinCosine.toString(),
+    );
     _selectedId = config.focusedProfileId;
     WidgetsBinding.instance.addPostFrameCallback((_) => _revealSelected());
   }
@@ -88,8 +95,9 @@ class _SettingsPageState extends State<SettingsPage>
   List<Profile> get _profiles => widget.controller.config.profiles;
 
   int _indexOfFocused() {
-    final index =
-        _profiles.indexWhere((p) => p.id == widget.controller.config.focusedProfileId);
+    final index = _profiles.indexWhere(
+      (p) => p.id == widget.controller.config.focusedProfileId,
+    );
     return index < 0 ? 0 : index;
   }
 
@@ -116,7 +124,8 @@ class _SettingsPageState extends State<SettingsPage>
 
   void _toast(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   /// 解析失败一律回落到默认值 —— 不该因为一个手滑的输入就保存不了。
@@ -143,15 +152,37 @@ class _SettingsPageState extends State<SettingsPage>
   Future<void> _saveVad() async {
     final base = widget.controller.config;
     // 只写全局参数。`copyWith` 不带 brain，档案一个都不会被动到。
-    await widget.controller.updateConfig(base.copyWith(
-      vadMinSilenceMs: _int(_vadMinSilenceMs, base.vadMinSilenceMs),
-      vadThreshold: _double(_vadThreshold, base.vadThreshold).clamp(0.01, 0.99),
-      vadSpeechPadMs: _int(_vadSpeechPadMs, base.vadSpeechPadMs),
-      vadMinSpeechMs: _int(_vadMinSpeechMs, base.vadMinSpeechMs),
-      vadMaxSpeechS: _int(_vadMaxSpeechS, base.vadMaxSpeechS).clamp(1, 600),
-      pvadMinCosine:
-          _double(_pvadMinCosine, base.pvadMinCosine).clamp(0.1, 0.9),
-    ));
+    await widget.controller.updateConfig(
+      base.copyWith(
+        vadMinSilenceMs: _int(_vadMinSilenceMs, base.vadMinSilenceMs),
+        vadThreshold: _double(
+          _vadThreshold,
+          base.vadThreshold,
+        ).clamp(0.01, 0.99),
+        vadSpeechPadMs: _int(_vadSpeechPadMs, base.vadSpeechPadMs),
+        vadMinSpeechMs: _int(_vadMinSpeechMs, base.vadMinSpeechMs),
+        vadMaxSpeechS: _int(_vadMaxSpeechS, base.vadMaxSpeechS).clamp(1, 600),
+        pvadMinCosine: _double(
+          _pvadMinCosine,
+          base.pvadMinCosine,
+        ).clamp(0.1, 0.9),
+      ),
+    );
+  }
+
+  /// 注册页要在线跑 onnxruntime-web，只能开浏览器，不能内嵌。
+  static const _voiceprintPageUrl = 'https://thautwarm.github.io/pp-friend/';
+
+  Future<void> _openVoiceprintPage() async {
+    try {
+      final opened = await launchUrl(
+        Uri.parse(_voiceprintPageUrl),
+        mode: LaunchMode.externalApplication,
+      );
+      if (!opened) _toast('没找到能打开网页的应用');
+    } catch (e) {
+      _toast('打开网页失败：$e');
+    }
   }
 
   /// 从文件里导入声纹。只认 768 字节的 `spkemb.f32`。
@@ -236,10 +267,7 @@ class _SettingsPageState extends State<SettingsPage>
         // 补一个空的回来），所以下面那个下标一定落在列表里面。
         body: TabBarView(
           controller: _tabs,
-          children: [
-            _profileTab(),
-            _vadTab(theme),
-          ],
+          children: [_profileTab(), _vadTab(theme)],
         ),
       ),
     );
@@ -373,8 +401,9 @@ class _SettingsPageState extends State<SettingsPage>
             Text(
               '在手机上用 Silero VAD 切句，只上传成句的片段。\n'
               '这些参数是全局的，切换档案不会重新加载模型。',
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
             ),
             const SizedBox(height: 12),
             SettingsTextField(
@@ -387,7 +416,9 @@ class _SettingsPageState extends State<SettingsPage>
               controller: _vadThreshold,
               label: '语音概率阈值',
               hint: '0.5 —— 0~1。调低更容易触发，调高更保守',
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
             ),
             SettingsTextField(
               controller: _vadSpeechPadMs,
@@ -430,9 +461,16 @@ class _SettingsPageState extends State<SettingsPage>
               runSpacing: 8,
               children: [
                 OutlinedButton.icon(
+                  onPressed: _openVoiceprintPage,
+                  icon: const Icon(Icons.open_in_new),
+                  label: const Text('打开注册网页'),
+                ),
+                OutlinedButton.icon(
                   onPressed: _importVoiceprint,
                   icon: const Icon(Icons.file_open_outlined),
-                  label: Text(widget.controller.hasVoiceprint ? '重新导入声纹' : '导入声纹'),
+                  label: Text(
+                    widget.controller.hasVoiceprint ? '重新导入声纹' : '导入声纹',
+                  ),
                 ),
                 if (widget.controller.hasVoiceprint)
                   TextButton.icon(
@@ -449,8 +487,9 @@ class _SettingsPageState extends State<SettingsPage>
                 controller: _pvadMinCosine,
                 label: '相似度阈值',
                 hint: '0.40',
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
               ),
             ],
           ],
@@ -463,8 +502,9 @@ class _SettingsPageState extends State<SettingsPage>
               contentPadding: EdgeInsets.zero,
               value: widget.controller.config.volumeKeyClearsQueue,
               onChanged: (enabled) => widget.controller.updateConfig(
-                widget.controller.config
-                    .copyWith(volumeKeyClearsQueue: enabled),
+                widget.controller.config.copyWith(
+                  volumeKeyClearsQueue: enabled,
+                ),
               ),
               title: const Text('音量减键清空队列'),
               subtitle: const Text(
