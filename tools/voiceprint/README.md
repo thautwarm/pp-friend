@@ -1,7 +1,9 @@
-# 声纹注册工具（ECAPA）
+# 项目网站与声纹注册工具（ECAPA）
 
-给说话人门控注册目标说话人的声纹。浏览器里解码音频、算 192 维
-ECAPA-TDNN embedding，导出成 App 能直接读的 `spkemb.f32`。
+这个目录同时是项目的静态网站源码：根目录是产品主页（中 / 英 / 日），
+`enroll/` 是声纹注册工具。给说话人门控注册目标说话人的声纹：浏览器里
+解码音频、算 192 维 ECAPA-TDNN embedding，导出成 App 能直接读的
+`spkemb.f32`。
 
 **全部计算都在本机浏览器内完成，音频不会上传。**
 onnxruntime-web 1.30.0 优先从 jsDelivr 加载（wasm 压缩后约 4 MiB），
@@ -17,7 +19,14 @@ jsDelivr 的 GitHub 通道上限，线上从页面同源（GitHub Pages）加载
 tools/voiceprint/
 ├── export_ecapa_onnx.py          # 一次性导出 + 强制验证脚本
 ├── quantize_ecapa_int8.py        # 导出 int8，给 App 内置用
-├── index.html                    # 单文件页面（内联 CSS/JS）
+├── index.html                    # 产品主页（中 / 英 / 日）
+├── brain-api/index.html          # Brain API 协议说明
+├── enroll/index.html             # 声纹注册工具页
+├── assets/
+│   ├── i18n.js                   # 三语字典与切换逻辑
+│   ├── main.js                   # 主页初始化
+│   ├── site.css                  # 两页共享样式
+│   └── voiceprint.js             # 注册工具逻辑（原单文件页拆出）
 ├── vendor/onnxruntime-web/dist/  # 本地 ORT 运行时（约 14 MiB，入库，CDN 的保底）
 ├── README.md
 ├── .gitignore                    # 忽略 .venv / *.ckpt / *.onnx / 音频
@@ -146,7 +155,8 @@ data）。动态轴：输入 batch、time；输出 batch。
 
 ## int8 量化（App 内置的那份）
 
-注册页仍然用 fp32 模型（本机算，体积不影响 App）。打进 APK 的是量化版：
+本地开发时注册页用 fp32 模型；线上 gh-pages 为了体积用的是 int8 版
+（22 MB）。打进 APK 的也是量化版：
 
 ```bash
 # 校准音频：16 kHz 单声道 wav，几段正常说话即可
@@ -189,12 +199,21 @@ let emb = out["emb"].try_extract_tensor::<f32>()?;      // [1, 192]
 ```bash
 cd tools/voiceprint
 python3 -m http.server 8000
-# 打开 http://localhost:8000/
+# 主页：  http://localhost:8000/
+# 注册页：http://localhost:8000/enroll/
 ```
 
+主页和注册页共用 `assets/` 下的样式、脚本和 i18n 字典。站点的
+`vendor/`、`models/` 都在这个目录的根下，注册页用 `../vendor/` 和
+`../models/` 引用，所以整目录部署到 GitHub Pages 时可直接用。
+
 `models/ecapa.onnx` 存在时页面自动加载。若直接用 `file://` 打开、或模型
-不存在，页面会显示「手动选择 ecapa.onnx」按钮；选本地文件即可，仍然不会
-上传。
+不存在，页面会显示「选择模型文件」按钮；选 `models/ecapa.onnx` 即可，
+仍然不会上传。
+
+线上 gh-pages 部署的模型是 int8 版（22 MB，字节与 `models/ecapa-int8.onnx`
+一致）；本地这份 fp32 模型（81 MiB）也能直接跑注册页。两者算出的声纹
+cosine 平均差 0.006 左右，见下面的量化一节。
 
 ### 页面行为
 

@@ -192,10 +192,11 @@ STT 吃 16k，TTS 出 24k。
   仓库分发，Rust 里的 pVAD 路径保留着，但默认没有模型可用。
 - 声纹：192 维，L2 归一化，768 字节的 `spkemb.f32`。注册网页和手机
   必须用同一个 checkpoint（SpeechBrain `spkrec-ecapa-voxceleb`），
-  换模型之后旧声纹就不能再比了。注册入口是 `tools/voiceprint` 的
-  纯 JS 网页（onnxruntime-web，音频不出本机），设置页用文件选择器导入。
-- 模型：注册页用 fp32（跑在本机），APK 用同一个 checkpoint 的 int8
-  （23 MiB）。实测 embedding cosine min 0.986 / mean 0.992，同人判定
+  换模型之后旧声纹就不能再比了。注册入口是 `tools/voiceprint/enroll/` 的
+  纯 JS 网页（onnxruntime-web，音频不出本机；线上在项目站点的 `/enroll/`），
+  设置页用文件选择器导入。
+- 模型：注册页本地用 fp32、线上用 int8（22 MiB，避免 81 MiB 的下载），
+  APK 用同一个 checkpoint 的 int8（23 MiB）。实测 embedding cosine min 0.986 / mean 0.992，同人判定
   分只挪 -0.006，旧声纹可以直接用。
 - 存储：声纹在应用私有目录 `voiceprint/spkemb.f32`，可随时删除。
 - 已知限制：

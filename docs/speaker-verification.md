@@ -1,7 +1,8 @@
 # 说话人识别（声纹）
 
 只让本人的声音进入上行。Silero VAD 负责切句，ECAPA 声纹负责判断
-"这一段是不是本人"。注册入口是 `tools/voiceprint` 网页。
+"这一段是不是本人"。注册入口是 `tools/voiceprint/enroll/` 网页，
+线上地址是 <https://thautwarm.github.io/pp-friend/enroll/>。
 
 ## 判定链路
 

@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title data-i18n="meta.title.brain">Brain API · PP Friend</title>
+<meta name="description" data-i18n-attr="content:meta.desc.brain"
+      content="PP Friend 客户端与服务端（brain）之间的协议：HTTP + MessagePack 的两个端点、音频格式、打断记账与重试约定。">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body>
+<nav class="site-nav">
+  <a class="brand" href="../">PP Friend</a>
+  <span class="spacer"></span>
+  <a class="nav-link" href="../" data-i18n="nav.home">主页</a>
+  <a class="nav-link" href="../enroll/" data-i18n="nav.enroll">声纹注册</a>
+  <a class="nav-link" href="https://github.com/thautwarm/pp-friend" data-i18n="nav.github">GitHub</a>
+  <span id="langSwitch"></span>
+</nav>
+
+<main class="narrow">
+  <header class="hero">
+    <h1 data-i18n="b.hero.title">Brain API</h1>
+    <p class="tag" data-i18n="b.hero.sub">手机只采音和放音；识别、对话、合成都由 brain（你自己的服务端）承担。这一页是协议本身，照着就能写一个自己的 brain。</p>
+    <p class="made" data-i18n="b.hero.note">与仓库里的 docs/brain-api.md 同源，以它为准。</p>
+  </header>
+
+  <section class="block" id="overview">
+    <h2 data-i18n="b.ov.title">概览</h2>
+    <p class="lead" data-i18n="b.ov.body">协议里一共四个端点，客户端只用前两个。后两个是给 agent 的纯文本通道，和客户端这套音频进、音频出不是一回事。</p>
+    <div class="table-scroll">
+      <table class="stack">
+        <tr>
+          <th data-i18n="b.ov.th.ep">端点</th>
+          <th data-i18n="b.ov.th.req">请求</th>
+          <th data-i18n="b.ov.th.resp">响应</th>
+          <th data-i18n="b.ov.th.used">客户端</th>
+        </tr>
+        <tr>
+          <td><code>POST /human-to-brain</code></td>
+          <td><code>{brain_id, audio}</code></td>
+          <td><code>{kind:"text", text}</code></td>
+          <td data-i18n="b.ov.yes">使用</td>
+        </tr>
+        <tr>
+          <td><code>POST /brain-to-human</code></td>
+          <td><code>{brain_id}</code></td>
+          <td><code>{kind:"empty"}</code> | <code>{kind:"text", text, audio}</code></td>
+          <td data-i18n="b.ov.yes">使用</td>
+        </tr>
+        <tr>
+          <td><code>POST /agent-to-brain</code></td>
+          <td><code>{brain_id, text}</code></td>
+          <td><code>{kind:"empty"}</code></td>
+          <td data-i18n="b.ov.no">未使用</td>
+        </tr>
+        <tr>
+          <td><code>POST /brain-to-agent</code></td>
+          <td><code>{brain_id}</code></td>
+          <td><code>{kind:"empty"}</code> | <code>{kind:"text", text}</code></td>
+          <td data-i18n="b.ov.no">未使用</td>
+        </tr>
+      </table>
+    </div>
+    <p class="hint mt" data-i18n="b.ov.kind">kind 是载荷判别符：empty 是没有内容，text 是有文本。它不代表操作成败，那是 HTTP 状态码的事。</p>
+    <p class="hint" data-i18n="b.ov.loops">客户端跑两条互相独立的循环：一条在 /brain-to-human 上长轮询，挂住直到 brain 有话说；另一条把断句切出来的语音按顺序串行发到 /human-to-brain。</p>
+  </section>
+
+  <section class="block" id="auth">
+    <h2 data-i18n="b.auth.title">鉴权</h2>
+    <p class="lead" data-i18n="b.auth.body">两个端点都支持 Bearer token：</p>
+    <pre class="code">Authorization: Bearer &lt;token&gt;</pre>
+    <ul class="tick">
+      <li data-i18n="b.auth.i1">token 是用户配置项，和 brain_id 一样，不是生成的。</li>
+      <li data-i18n="b.auth.i2">token 可以为空，表示这个部署没开鉴权。空的时候客户端不发 Authorization 头，而不是发一个空的 Bearer。</li>
+      <li data-i18n="b.auth.i3">401 是配置错误，不要当网络问题无限重试。提示 token 无效，停掉轮询。</li>
+    </ul>
+  </section>
+
+  <section class="block" id="encoding">
+    <h2 data-i18n="b.enc.title">载荷编码：MessagePack</h2>
+    <p class="lead" data-i18n="b.enc.body">请求和响应都是裸的 MessagePack，不是 JSON，也不是 multipart。上行音频放在 map 里，类型是 bin：不是 base64，不是字符串，二进制原样进出。</p>
+    <ul class="tick">
+      <li data-i18n="b.enc.ct">Content-Type / Accept 用 application/msgpack。规范没写明这个取值，客户端把它收在一个常量里，改一处即可。</li>
+      <li data-i18n="b.enc.warn">不要把响应当 UTF-8 解，里面是二进制音频。先按 MessagePack 解出 map，再取字段。</li>
+    </ul>
+  </section>
+
+  <section class="block" id="uplink">
+    <h2><code>POST /human-to-brain</code></h2>
+    <p class="lead" data-i18n="b.up.body">把一段人类语音交给 brain，只等转写。断句切出一句话就发一次。请求是一个 MessagePack map：</p>
+    <div class="table-scroll">
+      <table class="stack">
+        <tr>
+          <th data-i18n="b.th.key">键</th>
+          <th data-i18n="b.th.type">类型</th>
+          <th data-i18n="b.th.desc">说明</th>
+        </tr>
+        <tr>
+          <td><code>brain_id</code></td>
+          <td>str</td>
+          <td data-i18n="b.up.f.brainId">会话句柄，人起的名字，比如 "员工3"。两个端点里必须一致。</td>
+        </tr>
+        <tr>
+          <td><code>audio</code></td>
+          <td>bin</td>
+          <td data-i18n="b.up.f.audio">整句语音，Ogg Opus 16 kHz。没有 WAV 回落。</td>
+        </tr>
+        <tr>
+          <td><code>heard_ms</code></td>
+          <td>int</td>
+          <td data-i18n="b.up.f.heardMs">可选。上一段回复实际被听到的毫秒数，见「打断记账」。</td>
+        </tr>
+        <tr>
+          <td><code>unheard_text</code></td>
+          <td>str</td>
+          <td data-i18n="b.up.f.unheardText">可选。上一段回复没被听到的那部分文字，见「打断记账」。</td>
+        </tr>
+      </table>
+    </div>
+    <p class="lead mt" data-i18n="b.up.resp">响应：</p>
+    <pre class="code">{ "kind": "text", "text": "..." }</pre>
+  </section>
+
+  <section class="block" id="downlink">
+    <h2><code>POST /brain-to-human</code></h2>
+    <p class="lead" data-i18n="b.down.body">长轮询：请求挂住，直到 brain 有话说或者超时。请求只有 brain_id 一个字段。响应是两种之一：</p>
+    <pre class="code">{ "kind": "empty" }
+
+{ "kind": "text",
+  "text": "...",
+  "audio": &lt;bin: Ogg Opus 24kHz&gt;,
+  "spans": [ { "text": "...", "ms": 1200 }, ... ] }</pre>
+    <ul class="tick">
+      <li data-i18n="b.down.empty">empty 只是「暂时没话说」，客户端立刻再发一次，不停不等。</li>
+      <li data-i18n="b.down.spans">spans 是可选的按句时间账，用来支持「哪几句没听到」的上报。不给也能用，只是被打断时客户端只能估一个断点。</li>
+    </ul>
+  </section>
+
+  <section class="block" id="audio">
+    <h2 data-i18n="b.audio.title">音频格式</h2>
+    <div class="table-scroll">
+      <table class="stack">
+        <tr>
+          <th data-i18n="b.audio.th.dir">方向</th>
+          <th data-i18n="b.audio.th.fmt">格式</th>
+          <th data-i18n="b.audio.th.rate">采样率</th>
+        </tr>
+        <tr>
+          <td data-i18n="b.audio.up">上行 /human-to-brain</td>
+          <td>Ogg Opus（<code>audio/ogg</code>）</td>
+          <td>16 kHz</td>
+        </tr>
+        <tr>
+          <td data-i18n="b.audio.down">下行 /brain-to-human</td>
+          <td>Ogg Opus（<code>audio/ogg</code>）</td>
+          <td>24 kHz</td>
+        </tr>
+      </table>
+    </div>
+    <ul class="tick">
+      <li data-i18n="b.audio.why">两个方向采样率不同，是跟着模型走的：识别吃 16 kHz，合成出 24 kHz。</li>
+      <li data-i18n="b.audio.trap">实现时注意：Opus 内部固定跑 48 kHz，解码出来的采样率未必等于声明的采样率。要读解码器的实际输出再重采样，写死会变速。</li>
+    </ul>
+  </section>
+
+  <section class="block" id="barge">
+    <h2 data-i18n="b.int.title">打断记账：heard_ms 与 unheard_text</h2>
+    <p class="lead" data-i18n="b.int.body">brain 说到一半被打断，客户端要告诉它「哪一段没进到用户耳朵里」。报的是文字不是时间点：光给一个毫秒数，brain 还得自己把文本和音频对齐。</p>
+    <p class="lead" data-i18n="b.int.spans">所以回复里可以带一份按句的时间账 spans。它顺序拼起来就是整条音频，句间不许有没记账的静音：</p>
+    <div class="table-scroll">
+      <table class="stack">
+        <tr>
+          <th data-i18n="b.th.key">键</th>
+          <th data-i18n="b.th.type">类型</th>
+          <th data-i18n="b.th.desc">说明</th>
+        </tr>
+        <tr>
+          <td><code>spans[].text</code></td>
+          <td>str</td>
+          <td data-i18n="b.int.f.spanText">这一小段的文字，按句切最好。</td>
+        </tr>
+        <tr>
+          <td><code>spans[].ms</code></td>
+          <td>int</td>
+          <td data-i18n="b.int.f.spanMs">这一小段在 audio 里占的毫秒数。</td>
+        </tr>
+      </table>
+    </div>
+    <p class="hint mt" data-i18n="b.int.fallback">spans 是可选的。没给、或格式不对，客户端按 heard_ms / 总长 的比例估断点，再对齐到最近的句子边界。</p>
+    <p class="lead mt" data-i18n="b.int.fields">被打断之后，下一句 /human-to-brain 多带两个字段：</p>
+    <ul class="tick">
+      <li data-i18n="b.int.f1">unheard_text：没听到的那部分文字，包括正在播的那条没听完的尾巴，加上播放队列里还没轮到播的整段。</li>
+      <li data-i18n="b.int.f2">heard_ms：实际听到的毫秒数，纯粹方便服务端诊断。</li>
+      <li data-i18n="b.int.f3">只在真的被打断过才出现。没打断就一个键都不发：「没值」和「听到了 0 ms」是两件事。</li>
+      <li data-i18n="b.int.f4">账是累加的，挂在下一句用户的话上一起走，上传成功才清，失败留着。</li>
+    </ul>
+  </section>
+
+  <section class="block" id="errors">
+    <h2 data-i18n="b.err.title">错误与重试</h2>
+    <p class="lead" data-i18n="b.err.body">协议层没有错误响应，失败只来自网络和 HTTP 状态码：</p>
+    <div class="table-scroll">
+      <table class="stack">
+        <tr>
+          <th data-i18n="b.err.th.case">情况</th>
+          <th data-i18n="b.err.th.act">处理</th>
+        </tr>
+        <tr>
+          <td data-i18n="b.err.r1.k">网络错误 / 超时 / 5xx</td>
+          <td data-i18n="b.err.r1.v">客户端退避重试：500 ms 起，翻倍，15 s 封顶。</td>
+        </tr>
+        <tr>
+          <td>401 / 403</td>
+          <td data-i18n="b.err.r2.v">不重试。提示 token 无效，停止轮询。</td>
+        </tr>
+        <tr>
+          <td data-i18n="b.err.r3.k">响应不是合法 MessagePack</td>
+          <td data-i18n="b.err.r3.v">协议错误，重试大概率还是错。</td>
+        </tr>
+      </table>
+    </div>
+  </section>
+
+  <section class="block" id="example">
+    <h2 data-i18n="b.ex.title">最小示例</h2>
+    <p class="lead" data-i18n="b.ex.body">字段名就这些。一个能跑的 brain 只需要接两种请求、回三种 map。仓库里有一个按这个协议手写的假 brain（tools/mock_brain.py，含一份独立的 MessagePack 实现），可以拿来对照。</p>
+    <pre class="code">POST /human-to-brain
+Content-Type: application/msgpack
+Authorization: Bearer &lt;token&gt;   <span class="c">(optional)</span>
+
+{ "brain_id": "员工3", "audio": &lt;bin&gt; }
+
+<span class="c"># interrupted last time:</span>
+{ "brain_id": "员工3", "audio": &lt;bin&gt;,
+  "heard_ms": 1320, "unheard_text": "..." }
+
+<span class="c"># response:</span>
+{ "kind": "text", "text": "..." }</pre>
+    <pre class="code">POST /brain-to-human
+Content-Type: application/msgpack
+
+{ "brain_id": "员工3" }
+
+<span class="c"># nothing to say:</span>
+{ "kind": "empty" }
+
+<span class="c"># something to say:</span>
+{ "kind": "text", "text": "...", "audio": &lt;bin&gt;,
+  "spans": [ { "text": "...", "ms": 1200 },
+             { "text": "...", "ms": 900 } ] }</pre>
+  </section>
+
+  <section class="block" id="open">
+    <h2 data-i18n="b.pending.title">还没定的事</h2>
+    <ul class="tick">
+      <li data-i18n="b.pending.i1">Content-Type 的确切取值规范没写，客户端用 application/msgpack。</li>
+      <li data-i18n="b.pending.i2">brain 收到 unheard_text 之后怎么处理（当场重说还是以后避开）还没定。</li>
+    </ul>
+  </section>
+</main>
+
+<footer class="site-foot">
+  <p data-i18n="h.footer.license">PP Friend 是开源项目。许可证尚未确定，以仓库 README 为准。</p>
+  <p data-i18n="h.footer.docs">设计、协议与交接文档见仓库的 docs/ 目录。</p>
+</footer>
+
+<script src="../assets/i18n.js"></script>
+<script src="../assets/main.js"></script>
+</body>
+</html>
