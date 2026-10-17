@@ -1,0 +1,15 @@
+# Python 导出环境（按 README 重建，不入库）
+.venv/
+__pycache__/
+*.pyc
+
+# 模型权重与导出物：都很大，按 README 的 curl / 导出脚本现场生成
+*.onnx
+models/**/*.ckpt
+
+# 本地验证/录音音频
+*.wav
+*.mp3
+*.m4a
+*.ogg
+*.webm

@@ -1,0 +1,1121 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>声纹注册 · ECAPA-TDNN 192 维</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface: #fcfcfb;
+    --ink: #0b0b0b;
+    --ink-2: #52514e;
+    --muted: #898781;
+    --line: rgba(11, 11, 11, 0.10);
+    --line-strong: #c3c2b7;
+    --accent: #2a78d6;
+    --accent-ink: #ffffff;
+    --good: #0ca30c;
+    --warning: #b26a00;
+    --critical: #d03b3b;
+    --neg: #2a78d6;
+    --mid: #f0efec;
+    --pos: #e34948;
+    --shadow: 0 1px 2px rgba(11, 11, 11, 0.04), 0 8px 28px rgba(11, 11, 11, 0.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --page: #0d0d0d;
+      --surface: #1a1a19;
+      --ink: #f0efec;
+      --ink-2: #c3c2b7;
+      --muted: #898781;
+      --line: rgba(255, 255, 255, 0.10);
+      --line-strong: #383835;
+      --accent: #3987e5;
+      --accent-ink: #0b0b0b;
+      --good: #0ca30c;
+      --warning: #fab219;
+      --critical: #e66767;
+      --neg: #3987e5;
+      --mid: #383835;
+      --pos: #e66767;
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 28px rgba(0, 0, 0, 0.35);
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--page);
+    color: var(--ink);
+    font: 15px/1.55 system-ui, -apple-system, "Segoe UI", "PingFang SC",
+          "Microsoft YaHei", sans-serif;
+    min-height: 100vh;
+  }
+  main { max-width: 880px; margin: 0 auto; padding: 32px 20px 72px; }
+  h1 { font-size: 30px; line-height: 1.2; margin: 0 0 4px; letter-spacing: -0.02em; }
+  h2 { font-size: 16px; margin: 0; letter-spacing: 0.01em; }
+  p { margin: 8px 0; }
+  .sub { color: var(--ink-2); margin: 0 0 16px; }
+  .privacy {
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--good);
+    background: var(--surface);
+    border-radius: 8px;
+    padding: 10px 14px;
+    color: var(--ink-2);
+    font-size: 14px;
+    margin: 18px 0 22px;
+  }
+  .privacy strong { color: var(--ink); }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 18px 20px;
+    margin: 0 0 16px;
+    box-shadow: var(--shadow);
+  }
+  .card-head { display: flex; align-items: center; gap: 12px; justify-content: space-between; }
+  .hint { color: var(--muted); font-size: 13px; }
+  code {
+    font: 12.5px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    background: color-mix(in srgb, var(--ink) 6%, transparent);
+    border-radius: 4px;
+    padding: 1px 5px;
+  }
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12.5px; font-weight: 600; border-radius: 999px;
+    padding: 3px 10px; border: 1px solid var(--line);
+    color: var(--ink-2); white-space: nowrap;
+  }
+  .pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+  .pill.ok { color: var(--good); border-color: color-mix(in srgb, var(--good) 35%, transparent); }
+  .pill.ok::before { background: var(--good); }
+  .pill.pending { color: var(--warning); border-color: color-mix(in srgb, var(--warning) 35%, transparent); }
+  .pill.pending::before { background: var(--warning); }
+  .pill.error { color: var(--critical); border-color: color-mix(in srgb, var(--critical) 35%, transparent); }
+  .pill.error::before { background: var(--critical); }
+  button, .button {
+    appearance: none; border: 1px solid transparent; border-radius: 9px;
+    padding: 9px 16px; font: inherit; font-size: 14px; font-weight: 600;
+    cursor: pointer; background: var(--accent); color: var(--accent-ink);
+    transition: filter .15s ease, background .15s ease, border-color .15s ease;
+  }
+  button:hover { filter: brightness(1.06); }
+  button:disabled { opacity: .45; cursor: not-allowed; filter: none; }
+  button.secondary {
+    background: transparent; color: var(--ink); border-color: var(--line-strong);
+  }
+  button.secondary:hover { background: color-mix(in srgb, var(--ink) 5%, transparent); }
+  .row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .row.spread { justify-content: space-between; }
+  .mt { margin-top: 14px; }
+  .drop {
+    margin-top: 12px;
+    border: 1.5px dashed var(--line-strong);
+    border-radius: 12px;
+    padding: 26px 18px;
+    text-align: center;
+    color: var(--ink-2);
+    background: color-mix(in srgb, var(--ink) 2%, transparent);
+    cursor: pointer;
+    transition: border-color .15s ease, background .15s ease;
+  }
+  .drop:hover, .drop.over {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 6%, transparent);
+  }
+  .drop strong { color: var(--ink); }
+  .drop .small { display: block; color: var(--muted); font-size: 13px; margin-top: 4px; }
+  .bar {
+    height: 6px; border-radius: 999px; overflow: hidden;
+    background: color-mix(in srgb, var(--ink) 8%, transparent);
+  }
+  .bar > div { height: 100%; width: 0%; background: var(--accent); transition: width .18s ease; }
+  .progress-row { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+  .progress-row .bar { flex: 1; }
+  .progress-text { color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; min-width: 120px; text-align: right; }
+  .hidden { display: none !important; }
+  .error {
+    margin: 16px 0 0; padding: 11px 14px; border-radius: 9px;
+    border: 1px solid color-mix(in srgb, var(--critical) 40%, transparent);
+    background: color-mix(in srgb, var(--critical) 8%, transparent);
+    color: var(--critical); font-size: 14px;
+  }
+  .ok-note {
+    margin-top: 12px; padding: 10px 12px; border-radius: 8px;
+    border: 1px solid color-mix(in srgb, var(--good) 35%, transparent);
+    background: color-mix(in srgb, var(--good) 7%, transparent);
+    color: var(--ink-2); font-size: 13.5px;
+  }
+  .warn-note {
+    margin-top: 12px; padding: 10px 12px; border-radius: 8px;
+    border: 1px solid color-mix(in srgb, var(--warning) 40%, transparent);
+    background: color-mix(in srgb, var(--warning) 9%, transparent);
+    color: var(--ink-2); font-size: 13.5px;
+  }
+  .warn-note strong { color: var(--warning); }
+  .audio-info { margin-top: 12px; color: var(--ink-2); font-size: 13.5px; }
+  .audio-info b { color: var(--ink); font-weight: 600; }
+  .metrics { display: flex; gap: 22px; flex-wrap: wrap; margin: 16px 0 4px; }
+  .metric .k { color: var(--muted); font-size: 12.5px; display: block; }
+  .metric .v { font-size: 20px; font-weight: 650; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+  .strip-wrap { margin-top: 14px; }
+  .strip {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(13px, 1fr));
+    gap: 2px;
+    margin-top: 8px;
+  }
+  .cell {
+    aspect-ratio: 1 / 1; border-radius: 2px; min-width: 0;
+    transition: transform .1s ease;
+  }
+  .cell:hover { transform: scale(1.28); outline: 1px solid var(--ink); z-index: 1; }
+  .legend {
+    display: flex; align-items: center; gap: 8px;
+    margin-top: 10px; color: var(--muted); font-size: 12px;
+  }
+  .legend .ramp {
+    width: 180px; height: 8px; border-radius: 999px;
+    background: linear-gradient(90deg, var(--neg), var(--mid), var(--pos));
+    border: 1px solid var(--line);
+  }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    border: 1px solid var(--line); border-radius: 999px;
+    padding: 3px 10px; font-size: 12.5px; color: var(--ink-2);
+    font-variant-numeric: tabular-nums;
+  }
+  .chip.good::before { content: "✓"; color: var(--good); font-weight: 700; }
+  .chip.warn::before { content: "!"; color: var(--warning); font-weight: 700; }
+  .chip.warn { border-color: color-mix(in srgb, var(--warning) 40%, transparent); }
+  details { margin-top: 16px; }
+  summary { cursor: pointer; color: var(--ink-2); font-size: 13.5px; user-select: none; }
+  summary:hover { color: var(--ink); }
+  .values {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(122px, 1fr));
+    gap: 2px 10px; margin-top: 10px;
+    max-height: 300px; overflow: auto;
+    border-top: 1px solid var(--line); padding-top: 8px;
+  }
+  .values span {
+    font: 12px/1.7 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: nowrap;
+  }
+  .values span i { color: var(--muted); font-style: normal; }
+  .downloads { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
+  .format {
+    margin: 14px 0 0; padding-top: 12px; border-top: 1px solid var(--line);
+    color: var(--muted); font-size: 12.5px;
+  }
+  .format strong { color: var(--ink-2); }
+  .mic-dot {
+    display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--critical); margin-right: 7px; vertical-align: 1px;
+    animation: pulse 1.1s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+  footer { color: var(--muted); font-size: 12.5px; margin-top: 26px; line-height: 1.7; }
+  @media (max-width: 520px) {
+    h1 { font-size: 25px; }
+    .card { padding: 16px 15px; }
+    .metrics { gap: 16px; }
+    .cell { border-radius: 1px; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>声纹注册</h1>
+    <p class="sub">ECAPA-TDNN · 192 维 · 16 kHz 单声道</p>
+    <div class="privacy">
+      <strong>音频不会离开这台机器。</strong>
+      解码、重采样、特征提取和推理全部在当前页面内完成，不上传任何服务器。
+      onnxruntime-web 的 JS/WASM 已经放在本地 vendor 目录，不依赖 CDN。
+    </div>
+  </header>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>1. 模型</h2>
+      <span id="modelStatus" class="pill pending">未加载</span>
+    </div>
+    <p class="hint">
+      默认自动读取 <code>models/ecapa.onnx</code>。请从本目录用
+      <code>python3 -m http.server</code> 打开页面；直接双击
+      <code>file://</code> 打开时浏览器会禁止 fetch，页面会请你手动选择模型。
+    </p>
+    <div class="progress-row">
+      <div class="bar"><div id="modelProgress"></div></div>
+      <span id="modelProgressText" class="progress-text">等待模型</span>
+    </div>
+    <div id="modelPickerRow" class="row mt hidden">
+      <label class="button secondary">
+        手动选择 ecapa.onnx
+        <input id="modelFile" type="file" accept=".onnx,application/octet-stream" hidden>
+      </label>
+      <span class="hint">不会上传；文件只在本地读取。</span>
+    </div>
+    <p class="hint mt">
+      模型契约：输入 <code>wav</code> float32 <code>[1, T]</code>（T 个 16 kHz 采样点）；
+      输出 <code>emb</code> float32 <code>[1, 192]</code>，<strong>未归一化</strong>。
+    </p>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>2. 提供一段语音</h2>
+      <span id="audioStatus" class="pill">等待音频</span>
+    </div>
+    <div id="drop" class="drop" role="button" tabindex="0">
+      <strong>拖放音频到这里</strong>，或点击选择文件
+      <span class="small">支持 wav / mp3 / m4a / ogg · 少于 0.5 秒会被拒绝</span>
+      <input id="audioFile" type="file" accept="audio/*,.wav,.mp3,.m4a,.ogg" hidden>
+    </div>
+    <div class="row mt">
+      <button id="micBtn" class="secondary" type="button">开始录音</button>
+      <span id="micTimer" class="hint"></span>
+    </div>
+    <p class="hint">
+      录音只会保存在当前标签页；停止后自动转成 16 kHz 单声道并计算。
+      多声道音频会先下混为单声道，再用浏览器原生重采样器（OfflineAudioContext）转到 16 kHz。
+    </p>
+    <div id="audioInfo" class="audio-info"></div>
+    <div class="progress-row hidden" id="computeRow">
+      <div class="bar"><div id="computeProgress"></div></div>
+      <span id="computeProgressText" class="progress-text">推理中</span>
+    </div>
+  </section>
+
+  <section class="card" id="resultCard" hidden>
+    <div class="card-head">
+      <h2>3. 声纹结果</h2>
+      <span class="pill ok" id="resultPill">可以下载</span>
+    </div>
+    <div id="windowInfo" class="audio-info"></div>
+    <div id="consistency"></div>
+    <div class="metrics">
+      <div class="metric">
+        <span class="k">归一化前 L2 范数</span>
+        <span class="v" id="rawNorm">—</span>
+      </div>
+      <div class="metric">
+        <span class="k">窗口数</span>
+        <span class="v" id="windowCount">—</span>
+      </div>
+      <div class="metric">
+        <span class="k">维度</span>
+        <span class="v">192</span>
+      </div>
+    </div>
+
+    <div class="strip-wrap">
+      <div class="row spread">
+        <span class="hint">192 维数值（已 L2 归一化），从左到右、逐行按维度排列</span>
+      </div>
+      <div id="strip" class="strip" role="img" aria-label="192 维声纹数值热力条"></div>
+      <div class="legend">
+        <span>负值</span>
+        <span class="ramp" aria-hidden="true"></span>
+        <span>正值</span>
+        <span style="margin-left:6px">0 为灰色中点；悬停可看每一维的精确值</span>
+      </div>
+    </div>
+
+    <details>
+      <summary>展开 192 个数值（表格视图）</summary>
+      <div id="values" class="values"></div>
+    </details>
+
+    <div class="downloads">
+      <button id="dlF32" type="button">下载声纹 spkemb.f32</button>
+      <button id="dlJson" type="button" class="secondary">下载 spkemb.json</button>
+    </div>
+    <p class="format">
+      <strong>spkemb.f32</strong>：192 个 little-endian float32，共 <strong>768 字节</strong>，
+      无文件头，数值已 L2 归一化。App 端的 pVAD 会再归一化一次（幂等）。
+      <br>
+      <strong>spkemb.json</strong>：同样的数值，附带维度、范数、窗口一致性和模型信息，方便检查。
+    </p>
+  </section>
+
+  <div id="error" class="error" hidden></div>
+
+  <footer>
+    模型权重来自 FireRedTeam/FireRedChat-pvad 的
+    <code>spkrec-ecapa-voxceleb</code>（与 pVAD 训练时完全一致）。
+    页面本身不保存任何数据，刷新即清空。
+  </footer>
+</main>
+
+<!-- onnxruntime-web 已经 vendored 到本地：CDN 在国内经常连不上，
+     而这一页又必须能离线跑。见 vendor/onnxruntime-web/。 -->
+<script src="vendor/onnxruntime-web/dist/ort.wasm.min.js"></script>
+<script>
+(() => {
+  "use strict";
+
+  const SR = 16000;
+  const WIN_SECONDS = 3;
+  const MIN_SECONDS = 0.5;
+  const MAX_RECORD_SECONDS = 30;
+  const EMB_DIM = 192;
+  const WIN = WIN_SECONDS * SR;
+  const MIN = MIN_SECONDS * SR;
+  // onnxruntime-web 版本固定为 1.30.0，文件在 vendor/onnxruntime-web/dist/ 下。
+
+  const $ = (id) => document.getElementById(id);
+  const el = {
+    modelStatus: $("modelStatus"),
+    modelProgress: $("modelProgress"),
+    modelProgressText: $("modelProgressText"),
+    modelPickerRow: $("modelPickerRow"),
+    modelFile: $("modelFile"),
+    audioStatus: $("audioStatus"),
+    drop: $("drop"),
+    audioFile: $("audioFile"),
+    micBtn: $("micBtn"),
+    micTimer: $("micTimer"),
+    audioInfo: $("audioInfo"),
+    computeRow: $("computeRow"),
+    computeProgress: $("computeProgress"),
+    computeProgressText: $("computeProgressText"),
+    resultCard: $("resultCard"),
+    resultPill: $("resultPill"),
+    windowInfo: $("windowInfo"),
+    consistency: $("consistency"),
+    rawNorm: $("rawNorm"),
+    windowCount: $("windowCount"),
+    strip: $("strip"),
+    values: $("values"),
+    dlF32: $("dlF32"),
+    dlJson: $("dlJson"),
+    error: $("error"),
+  };
+
+  const state = {
+    session: null,
+    inputName: "wav",
+    outputName: "emb",
+    samples: null,
+    audioMeta: null,
+    result: null,
+    busy: false,
+    recording: false,
+  };
+
+  let sharedCtx = null;
+  let recorder = null;
+  let recordChunks = [];
+  let recordStream = null;
+  let recordStart = 0;
+  let recordTimer = 0;
+  let recordAutoStop = 0;
+
+  // ------------------------------------------------------------------
+  // 基础 UI
+  // ------------------------------------------------------------------
+  function setModelStatus(text, kind) {
+    el.modelStatus.textContent = text;
+    el.modelStatus.className = "pill" + (kind ? " " + kind : "");
+  }
+  function setAudioStatus(text, kind) {
+    el.audioStatus.textContent = text;
+    el.audioStatus.className = "pill" + (kind ? " " + kind : "");
+  }
+  function setProgress(bar, textEl, ratio, text) {
+    const pct = Math.max(0, Math.min(1, ratio)) * 100;
+    bar.style.width = pct.toFixed(1) + "%";
+    if (text != null) textEl.textContent = text;
+  }
+  function showError(message) {
+    el.error.hidden = false;
+    el.error.textContent = message;
+  }
+  function clearError() {
+    el.error.hidden = true;
+    el.error.textContent = "";
+  }
+  function formatSeconds(value) {
+    return value.toFixed(2) + " 秒";
+  }
+
+  // ------------------------------------------------------------------
+  // onnxruntime-web
+  // ------------------------------------------------------------------
+  if (window.ort) {
+    // 必须是绝对 URL：ORT 会用动态 import() 去加载 .mjs，
+    // 相对路径会被当成裸模块名，解析失败。
+    ort.env.wasm.wasmPaths = new URL(
+      "vendor/onnxruntime-web/dist/", document.baseURI).href;
+    // 单线程：不需要 SharedArrayBuffer / COOP-COEP，python -m http.server 也能直接跑。
+    ort.env.wasm.numThreads = 1;
+    ort.env.logLevel = "error";
+  }
+
+  async function fetchWithProgress(url, bar, textEl) {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error("HTTP " + response.status);
+    const total = Number(response.headers.get("content-length")) || 0;
+    if (!response.body) return await response.arrayBuffer();
+
+    const reader = response.body.getReader();
+    const chunks = [];
+    let received = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      received += value.length;
+      if (total > 0) {
+        setProgress(bar, textEl, received / total,
+          "下载模型 " + Math.round(received / total * 100) + "%");
+      } else {
+        setProgress(bar, textEl, 0, (received / 1024 / 1024).toFixed(1) + " MiB");
+      }
+    }
+    const bytes = new Uint8Array(received);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.length;
+    }
+    return bytes.buffer;
+  }
+
+  async function createSession(buffer) {
+    if (!window.ort) {
+      throw new Error(
+        "onnxruntime-web 没有加载成功：vendor/onnxruntime-web/dist/ 下的文件不全，或者页面不是通过 http 服务打开的。");
+    }
+    setModelStatus("加载中", "pending");
+    setProgress(el.modelProgress, el.modelProgressText, 0.05, "初始化推理引擎");
+    const session = await ort.InferenceSession.create(buffer, {
+      executionProviders: ["wasm"],
+      graphOptimizationLevel: "all",
+    });
+    state.session = session;
+    state.inputName = session.inputNames.includes("wav") ? "wav" : session.inputNames[0];
+    state.outputName = session.outputNames.includes("emb") ? "emb" : session.outputNames[0];
+    if (!session.inputNames.includes("wav") || !session.outputNames.includes("emb")) {
+      showError("模型输入/输出名不是 wav/emb，实际为 " +
+        session.inputNames.join(",") + " -> " + session.outputNames.join(",") +
+        "。页面仍会按第一个输入/输出运行，但请确认模型文件是否正确。");
+    }
+    setModelStatus("就绪", "ok");
+    setProgress(el.modelProgress, el.modelProgressText, 1, "模型已就绪");
+    el.modelPickerRow.classList.add("hidden");
+    maybeCompute();
+  }
+
+  async function initModel() {
+    clearError();
+    try {
+      setModelStatus("下载中", "pending");
+      setProgress(el.modelProgress, el.modelProgressText, 0, "连接模型");
+      const buffer = await fetchWithProgress("models/ecapa.onnx",
+        el.modelProgress, el.modelProgressText);
+      setProgress(el.modelProgress, el.modelProgressText, 0.02, "解析模型");
+      await createSession(buffer);
+    } catch (err) {
+      setModelStatus("未加载", "error");
+      setProgress(el.modelProgress, el.modelProgressText, 0, "自动读取失败");
+      el.modelPickerRow.classList.remove("hidden");
+      // 这里不一定是致命错误：用户还可以手动选文件。
+      showError(
+        "无法自动读取 models/ecapa.onnx（" + (err && err.message ? err.message : err) +
+        "）。如果页面是 file:// 打开的，请改用 python3 -m http.server；" +
+        "也可以点上面的「手动选择 ecapa.onnx」。音频可以先选好，模型加载后会自动计算。"
+      );
+    }
+  }
+
+  el.modelFile.addEventListener("change", async () => {
+    const file = el.modelFile.files && el.modelFile.files[0];
+    if (!file) return;
+    clearError();
+    try {
+      setProgress(el.modelProgress, el.modelProgressText, 0.1, "读取本地模型");
+      const buffer = await file.arrayBuffer();
+      await createSession(buffer);
+    } catch (err) {
+      setModelStatus("未加载", "error");
+      showError("加载本地 ONNX 失败：" + (err && err.message ? err.message : err));
+    }
+  });
+
+  // ------------------------------------------------------------------
+  // 音频解码 / 下混 / 重采样
+  // ------------------------------------------------------------------
+  function getAudioContext() {
+    if (!sharedCtx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) throw new Error("浏览器不支持 Web Audio API。");
+      sharedCtx = new AC();
+    }
+    return sharedCtx;
+  }
+
+  async function decodeTo16k(file) {
+    const arrayBuffer = await file.arrayBuffer();
+    let decoded = null;
+    let ctx = null;
+
+    // 优先直接在一个 16 kHz 的 OfflineAudioContext 里解码：
+    // decodeAudioData 会用浏览器原生重采样器一步转到上下文采样率，
+    // 避免 16k -> 48k -> 16k 的往返（那会白白损失高频细节）。
+    try {
+      const decodeCtx = new OfflineAudioContext(1, 1, SR);
+      decoded = await decodeCtx.decodeAudioData(arrayBuffer.slice(0));
+    } catch (_) {
+      // 少数浏览器不支持在 OfflineAudioContext 上解码；退回普通 AudioContext。
+    }
+
+    if (!decoded) {
+      ctx = getAudioContext();
+      if (ctx.state === "suspended") {
+        try { await ctx.resume(); } catch (_) { /* 用户手势之外可能失败 */ }
+      }
+      try {
+        decoded = await ctx.decodeAudioData(arrayBuffer.slice(0));
+      } catch (err) {
+        throw new Error("浏览器无法解码这个文件，请换 wav/mp3/m4a/ogg 再试。");
+      }
+    }
+    if (!decoded || !decoded.length) throw new Error("音频是空的。");
+
+    // 1) 手动下混成单声道（不用 OfflineAudioContext 的隐式混音规则）。
+    const mono = new Float32Array(decoded.length);
+    const channels = decoded.numberOfChannels;
+    for (let c = 0; c < channels; c++) {
+      const data = decoded.getChannelData(c);
+      for (let i = 0; i < data.length; i++) mono[i] += data[i];
+    }
+    if (channels > 1) {
+      for (let i = 0; i < mono.length; i++) mono[i] /= channels;
+    }
+
+    // 2) 若解码器没有给出 16 kHz（回退路径），再用 OfflineAudioContext
+    //    的原生重采样器转一次。正常路径下这里已经是 16 kHz。
+    let samples;
+    if (decoded.sampleRate === SR) {
+      samples = mono;
+    } else {
+      const targetLength = Math.max(1, Math.round(decoded.duration * SR));
+      const offline = new OfflineAudioContext(1, targetLength, SR);
+      const source = offline.createBufferSource();
+      const monoBuffer = (ctx || getAudioContext()).createBuffer(
+        1, mono.length, decoded.sampleRate);
+      monoBuffer.copyToChannel(mono, 0);
+      source.buffer = monoBuffer;
+      source.connect(offline.destination);
+      source.start(0);
+      const rendered = await offline.startRendering();
+      samples = new Float32Array(rendered.length);
+      samples.set(rendered.getChannelData(0));
+    }
+
+    return {
+      samples,
+      duration: decoded.duration,
+      sourceChannels: channels,
+      resampled: decoded.sampleRate !== SR,
+    };
+  }
+
+  function planWindows(n) {
+    if (n < MIN) return null;
+    if (n <= WIN) return [{ start: 0, end: n }];
+    const windows = [];
+    let start = 0;
+    while (start + WIN <= n) {
+      windows.push({ start, end: start + WIN });
+      start += WIN;
+    }
+    // 最后一段不足 3 秒：如果至少 0.5 秒，就向前重叠成一个完整 3 秒窗。
+    if (n - start >= MIN) {
+      windows.push({ start: n - WIN, end: n });
+    }
+    return windows;
+  }
+
+  function setBusy(busy) {
+    state.busy = busy;
+    el.micBtn.disabled = busy || state.recording;
+    el.audioFile.disabled = busy;
+  }
+
+  async function handleAudioFile(file) {
+    if (!file) return;
+    if (state.busy) return;
+    clearError();
+    resetResult();
+    setAudioStatus("解码中", "pending");
+    try {
+      const decoded = await decodeTo16k(file);
+      if (decoded.samples.length < MIN) {
+        throw new Error("音频只有 " + decoded.samples.length / SR +
+          " 秒，太短了；请至少提供 0.5 秒语音再试。");
+      }
+      state.samples = decoded.samples;
+      state.audioMeta = { name: file.name || "录音", ...decoded };
+      setAudioStatus("已就绪", "ok");
+      renderAudioInfo();
+      await maybeCompute();
+    } catch (err) {
+      state.samples = null;
+      state.audioMeta = null;
+      el.audioInfo.textContent = "";
+      el.resultCard.hidden = true;
+      setAudioStatus("无法使用", "error");
+      showError("音频处理失败：" + (err && err.message ? err.message : err));
+    }
+  }
+
+  function renderAudioInfo() {
+    const meta = state.audioMeta;
+    if (!meta) { el.audioInfo.textContent = ""; return; }
+    const windows = planWindows(meta.samples.length) || [];
+    const channelText = meta.sourceChannels > 1
+      ? meta.sourceChannels + " 声道 → 单声道"
+      : "单声道";
+    let html = "<b>" + escapeHtml(meta.name) + "</b> · " +
+      formatSeconds(meta.duration) + " · " + channelText +
+      " · 16 kHz · " + windows.length + " 个推理窗口";
+    if (windows.length > 1) {
+      html += "（每段 3 秒，最后一段向前重叠）";
+    }
+    el.audioInfo.innerHTML = html;
+  }
+
+  // ------------------------------------------------------------------
+  // 推理
+  // ------------------------------------------------------------------
+  async function maybeCompute() {
+    if (!state.session || !state.samples || state.busy) return;
+    await computeEmbedding();
+  }
+
+  async function computeEmbedding() {
+    const windows = planWindows(state.samples.length);
+    if (!windows || !windows.length) {
+      showError("音频太短：至少需要 0.5 秒。");
+      return;
+    }
+    setBusy(true);
+    el.computeRow.classList.remove("hidden");
+    el.resultCard.hidden = true;
+    setAudioStatus("推理中", "pending");
+    setProgress(el.computeProgress, el.computeProgressText, 0, "准备推理");
+
+    try {
+      const raw = [];
+      for (let i = 0; i < windows.length; i++) {
+        const win = windows[i];
+        const data = state.samples.slice(win.start, win.end);
+        const tensor = new ort.Tensor("float32", data, [1, data.length]);
+        const feeds = {};
+        feeds[state.inputName] = tensor;
+        const outputs = await state.session.run(feeds);
+        const out = outputs[state.outputName];
+        if (!out || !out.data || out.data.length !== EMB_DIM) {
+          throw new Error("模型输出维度不是 192，实际为 " +
+            (out && out.data ? out.data.length : "无") + "。");
+        }
+        raw.push(Float32Array.from(out.data));
+        setProgress(el.computeProgress, el.computeProgressText,
+          (i + 1) / windows.length,
+          "推理中 " + (i + 1) + "/" + windows.length);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+
+      // 平均原始 embedding，再 L2 归一化。
+      const mean = new Float64Array(EMB_DIM);
+      for (const emb of raw) {
+        for (let i = 0; i < EMB_DIM; i++) mean[i] += emb[i];
+      }
+      for (let i = 0; i < EMB_DIM; i++) mean[i] /= raw.length;
+
+      let rawNorm = 0;
+      for (let i = 0; i < EMB_DIM; i++) rawNorm += mean[i] * mean[i];
+      rawNorm = Math.sqrt(rawNorm);
+      if (!Number.isFinite(rawNorm) || rawNorm < 1e-8) {
+        throw new Error("得到的是零向量，无法生成声纹。请换一段有声音的音频。");
+      }
+      const normed = new Float32Array(EMB_DIM);
+      for (let i = 0; i < EMB_DIM; i++) normed[i] = mean[i] / rawNorm;
+
+      const cosines = raw.map((emb) => cosineToMean(emb, mean));
+      state.result = {
+        normed,
+        rawNorm,
+        cosines,
+        windows,
+        rawWindowNorm: raw.map(normOf),
+        duration: state.samples.length / SR,
+      };
+      renderResult(state.result);
+      setAudioStatus("完成", "ok");
+      setProgress(el.computeProgress, el.computeProgressText, 1, "完成");
+    } catch (err) {
+      el.resultCard.hidden = true;
+      setAudioStatus("推理失败", "error");
+      showError("计算声纹失败：" + (err && err.message ? err.message : err));
+    } finally {
+      setBusy(false);
+      setTimeout(() => { el.computeRow.classList.add("hidden"); }, 600);
+    }
+  }
+
+  function normOf(vec) {
+    let sum = 0;
+    for (let i = 0; i < vec.length; i++) sum += vec[i] * vec[i];
+    return Math.sqrt(sum);
+  }
+  function cosineToMean(vec, mean) {
+    let dot = 0, na = 0, nb = 0;
+    for (let i = 0; i < vec.length; i++) {
+      dot += vec[i] * mean[i];
+      na += vec[i] * vec[i];
+      nb += mean[i] * mean[i];
+    }
+    const denom = Math.sqrt(na) * Math.sqrt(nb);
+    return denom > 0 ? dot / denom : NaN;
+  }
+
+  // ------------------------------------------------------------------
+  // 结果渲染
+  // ------------------------------------------------------------------
+  function mix(a, b, t) {
+    return [
+      Math.round(a[0] + (b[0] - a[0]) * t),
+      Math.round(a[1] + (b[1] - a[1]) * t),
+      Math.round(a[2] + (b[2] - a[2]) * t),
+    ];
+  }
+
+  function heatColor(value, maxAbs) {
+    const dark = window.matchMedia &&
+      window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const neg = dark ? [57, 135, 229] : [42, 120, 214];
+    const mid = dark ? [56, 56, 53] : [240, 239, 236];
+    const pos = dark ? [230, 103, 103] : [227, 73, 72];
+    const t = Math.max(-1, Math.min(1, value / maxAbs));
+    const rgb = t < 0 ? mix(mid, neg, -t) : mix(mid, pos, t);
+    return "rgb(" + rgb[0] + "," + rgb[1] + "," + rgb[2] + ")";
+  }
+
+  /// 开始一次新的录音/选文件时，先把上一次的结果彻底作废。
+  /// 否则新录音失败时，下载按钮仍然可用，会把上一段声音的声纹
+  /// 当成这一次的结果导出去（已经踩过一次：两个人的文件字节相同）。
+  function resetResult() {
+    state.result = null;
+    el.resultCard.hidden = true;
+    el.consistency.textContent = "";
+    el.dlF32.disabled = true;
+    el.dlJson.disabled = true;
+  }
+
+  function renderResult(result) {
+    el.resultCard.hidden = false;
+    el.rawNorm.textContent = result.rawNorm.toFixed(4);
+    el.windowCount.textContent = String(result.windows.length);
+    el.resultPill.textContent = "可以下载";
+    el.resultPill.className = "pill ok";
+
+    // 窗口信息
+    const parts = result.windows.map((w) => {
+      return (w.start / SR).toFixed(2) + "–" + (w.end / SR).toFixed(2) + "s";
+    });
+    el.windowInfo.innerHTML =
+      "总时长 <b>" + result.duration.toFixed(2) + " 秒</b> · 推理窗口 " +
+      parts.length + " 个（" + parts.join("，") + "）";
+
+    // 一致性
+    const minCos = Math.min(...result.cosines);
+    el.consistency.textContent = "";
+    const chips = document.createElement("div");
+    chips.className = "chips";
+    result.cosines.forEach((cos, i) => {
+      const chip = document.createElement("span");
+      chip.className = "chip " + (cos >= 0.8 ? "good" : "warn");
+      chip.textContent = "窗口 " + (i + 1) + " cos " + cos.toFixed(4);
+      chip.title = "该窗口的 embedding 与所有窗口均值的余弦相似度";
+      chips.appendChild(chip);
+    });
+    el.consistency.appendChild(chips);
+
+    if (result.cosines.length > 1 && minCos < 0.8) {
+      const warn = document.createElement("div");
+      warn.className = "warn-note";
+      warn.innerHTML = "<strong>!</strong> 各窗口一致性偏低（最低 cos " +
+        minCos.toFixed(3) + "）。录音可能包含多人、噪声或长时间停顿；" +
+        "建议在安静环境下由同一个人重新录一遍。";
+      el.consistency.appendChild(warn);
+    } else if (result.cosines.length > 1) {
+      const note = document.createElement("div");
+      note.className = "ok-note";
+      note.textContent = "各窗口一致性正常（最低 cos " + minCos.toFixed(3) + "）。";
+      el.consistency.appendChild(note);
+    }
+
+    // 热力条
+    let maxAbs = 0;
+    for (let i = 0; i < result.normed.length; i++) {
+      maxAbs = Math.max(maxAbs, Math.abs(result.normed[i]));
+    }
+    maxAbs = Math.max(maxAbs, 0.01);
+    el.strip.textContent = "";
+    const frag = document.createDocumentFragment();
+    for (let i = 0; i < result.normed.length; i++) {
+      const v = result.normed[i];
+      const cell = document.createElement("div");
+      cell.className = "cell";
+      cell.style.background = heatColor(v, maxAbs);
+      cell.title = "#" + i + "  " + v.toFixed(6);
+      cell.setAttribute("aria-label", "维度 " + i + " 值 " + v.toFixed(6));
+      frag.appendChild(cell);
+    }
+    el.strip.appendChild(frag);
+
+    // 数值表
+    el.values.textContent = "";
+    const valuesFrag = document.createDocumentFragment();
+    for (let i = 0; i < result.normed.length; i++) {
+      const row = document.createElement("span");
+      const idx = document.createElement("i");
+      idx.textContent = String(i).padStart(3, "0") + "  ";
+      row.appendChild(idx);
+      row.appendChild(document.createTextNode(result.normed[i].toFixed(6)));
+      valuesFrag.appendChild(row);
+    }
+    el.values.appendChild(valuesFrag);
+
+    el.dlF32.disabled = false;
+    el.dlJson.disabled = false;
+  }
+
+  // ------------------------------------------------------------------
+  // 下载
+  // ------------------------------------------------------------------
+  function download(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  }
+
+  el.dlF32.addEventListener("click", () => {
+    const result = state.result;
+    if (!result) return;
+    const buffer = new ArrayBuffer(EMB_DIM * 4);
+    const view = new DataView(buffer);
+    for (let i = 0; i < EMB_DIM; i++) {
+      view.setFloat32(i * 4, result.normed[i], true); // little-endian
+    }
+    download(new Blob([buffer], { type: "application/octet-stream" }), "spkemb.f32");
+  });
+
+  el.dlJson.addEventListener("click", () => {
+    const result = state.result;
+    if (!result) return;
+    const payload = {
+      format: "spkemb-v1",
+      dim: EMB_DIM,
+      dtype: "float32",
+      endianness: "little",
+      normalized: true,
+      l2_norm_before_normalization: result.rawNorm,
+      model: "FireRedTeam/FireRedChat-pvad spkrec-ecapa-voxceleb (ECAPA-TDNN)",
+      sample_rate: SR,
+      window_seconds: WIN_SECONDS,
+      duration_seconds: result.duration,
+      window_count: result.windows.length,
+      window_ranges_seconds: result.windows.map((w) => [
+        Number((w.start / SR).toFixed(4)),
+        Number((w.end / SR).toFixed(4)),
+      ]),
+      window_cosine_to_mean: result.cosines,
+      embedding: Array.from(result.normed, (v) => Number(v.toFixed(9))),
+    };
+    download(
+      new Blob([JSON.stringify(payload, null, 2) + "\n"], { type: "application/json" }),
+      "spkemb.json"
+    );
+  });
+
+  // ------------------------------------------------------------------
+  // 文件选择 / 拖放
+  // ------------------------------------------------------------------
+  el.drop.addEventListener("click", () => el.audioFile.click());
+  el.drop.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      el.audioFile.click();
+    }
+  });
+  el.audioFile.addEventListener("change", () => {
+    const file = el.audioFile.files && el.audioFile.files[0];
+    el.audioFile.value = "";
+    if (file) handleAudioFile(file);
+  });
+  ["dragenter", "dragover"].forEach((type) => {
+    el.drop.addEventListener(type, (event) => {
+      event.preventDefault();
+      el.drop.classList.add("over");
+    });
+  });
+  ["dragleave", "dragend"].forEach((type) => {
+    el.drop.addEventListener(type, () => el.drop.classList.remove("over"));
+  });
+  el.drop.addEventListener("drop", (event) => {
+    event.preventDefault();
+    el.drop.classList.remove("over");
+    const file = event.dataTransfer && event.dataTransfer.files &&
+      event.dataTransfer.files[0];
+    if (file) handleAudioFile(file);
+  });
+  window.addEventListener("dragover", (event) => event.preventDefault());
+  window.addEventListener("drop", (event) => event.preventDefault());
+
+  // ------------------------------------------------------------------
+  // 麦克风录音
+  // ------------------------------------------------------------------
+  function pickMime() {
+    if (!window.MediaRecorder) return "";
+    const candidates = [
+      "audio/webm;codecs=opus",
+      "audio/webm",
+      "audio/ogg;codecs=opus",
+      "audio/mp4",
+    ];
+    for (const mime of candidates) {
+      try {
+        if (MediaRecorder.isTypeSupported(mime)) return mime;
+      } catch (_) { /* 忽略 */ }
+    }
+    return "";
+  }
+
+  function updateMicTimer() {
+    const seconds = (performance.now() - recordStart) / 1000;
+    el.micTimer.innerHTML =
+      '<span class="mic-dot"></span>录音中 ' + seconds.toFixed(1) + " 秒";
+    if (seconds >= MAX_RECORD_SECONDS - 0.05) stopRecording();
+  }
+
+  async function startRecording() {
+    clearError();
+    resetResult();
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      showError("当前浏览器不支持麦克风录音，请改用文件上传。");
+      return;
+    }
+    try {
+      recordStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+        },
+      });
+      const mime = pickMime();
+      recorder = mime ? new MediaRecorder(recordStream, { mimeType: mime })
+                      : new MediaRecorder(recordStream);
+      recordChunks = [];
+      recorder.addEventListener("dataavailable", (event) => {
+        if (event.data && event.data.size) recordChunks.push(event.data);
+      });
+      recorder.addEventListener("stop", async () => {
+        const mimeType = recorder.mimeType || "audio/webm";
+        const blob = new Blob(recordChunks, { type: mimeType });
+        recordChunks = [];
+        if (recordStream) {
+          recordStream.getTracks().forEach((track) => track.stop());
+          recordStream = null;
+        }
+        clearInterval(recordTimer);
+        clearTimeout(recordAutoStop);
+        state.recording = false;
+        el.micBtn.disabled = false;
+        el.micBtn.textContent = "开始录音";
+        el.micTimer.textContent = "";
+        el.audioFile.disabled = false;
+        if (blob.size === 0) {
+          showError("没有录到音频。");
+          return;
+        }
+        await handleAudioFile(new File([blob], "microphone.webm", { type: mimeType }));
+      });
+
+      recordStart = performance.now();
+      state.recording = true;
+      el.micBtn.textContent = "停止录音";
+      el.micBtn.disabled = false;
+      el.audioFile.disabled = true;
+      recordTimer = setInterval(updateMicTimer, 100);
+      recordAutoStop = setTimeout(stopRecording, MAX_RECORD_SECONDS * 1000);
+      recorder.start();
+    } catch (err) {
+      showError("无法打开麦克风：" + (err && err.message ? err.message : err) +
+        "。请检查浏览器权限，或改用文件上传。");
+      if (recordStream) {
+        recordStream.getTracks().forEach((track) => track.stop());
+        recordStream = null;
+      }
+      state.recording = false;
+      el.micBtn.disabled = false;
+      el.micBtn.textContent = "开始录音";
+      el.audioFile.disabled = false;
+    }
+  }
+
+  function stopRecording() {
+    if (recorder && recorder.state === "recording") {
+      recorder.stop();
+    }
+  }
+
+  el.micBtn.addEventListener("click", () => {
+    if (state.recording) stopRecording();
+    else startRecording();
+  });
+
+  // ------------------------------------------------------------------
+  // 小工具
+  // ------------------------------------------------------------------
+  function escapeHtml(text) {
+    return String(text)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  // 暗色模式切换时重绘热力条，保证颜色继续按当前表面取值。
+  if (window.matchMedia) {
+    const query = window.matchMedia("(prefers-color-scheme: dark)");
+    const rerender = () => { if (state.result) renderResult(state.result); };
+    if (query.addEventListener) query.addEventListener("change", rerender);
+    else if (query.addListener) query.addListener(rerender);
+  }
+
+  el.dlF32.disabled = true;
+  el.dlJson.disabled = true;
+  initModel();
+})();
+</script>
+</body>
+</html>
