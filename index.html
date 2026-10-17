@@ -12,6 +12,7 @@
 <nav class="site-nav">
   <a class="brand" href="./">PP Friend</a>
   <span class="spacer"></span>
+  <a class="nav-link" href="brain-api/" data-i18n="nav.brainApi">Brain API</a>
   <a class="nav-link" href="enroll/" data-i18n="nav.enroll">声纹注册</a>
   <a class="nav-link" href="https://github.com/thautwarm/pp-friend" data-i18n="nav.github">GitHub</a>
   <span id="langSwitch"></span>
@@ -20,7 +21,201 @@
 <main>
   <header class="hero">
     <h1>PP Friend</h1>
-    <p class="tag" data-i18n="h.hero.tag">自托管的实时语音助手客户端。手机只做两件事：采音、放音；识别、对话、合成全部交给你自己的服务端（代码里叫 brain）。</p>
+    <p class="tag" data-i18n="h.hero.tag">一个一直开着的语音搭子。你随时开口它都在，它有进展了也会主动来找你。</p>
+    <div class="pp-diagram">
+      <svg class="ppd ppd-wide" viewBox="0 0 900 192" role="img" data-i18n-attr="aria-label:h.hero.ppAria" aria-label="用户把语音推给 brain，再把回复拉回手机；agent 把文本推给 brain，再把人的文本拉回去。四条通道同时开着。">
+        <defs>
+          <radialGradient id="ppAgentGlowWide">
+            <stop class="ppd-stop-glow-a" offset="0"/>
+            <stop class="ppd-stop-glow-b" offset="1"/>
+          </radialGradient>
+        </defs>
+
+        <circle class="ppd-glow" cx="800" cy="95" r="66" fill="url(#ppAgentGlowWide)"/>
+        <rect class="ppd-channel" x="340" y="74" width="108" height="44" rx="22"/>
+        <rect class="ppd-channel" x="624" y="74" width="108" height="44" rx="22"/>
+
+        <!-- 用户 ↔ 手机：只是采音 / 放音，不是 Brain API -->
+        <line class="ppd-line audio" x1="147" y1="95" x2="166" y2="95"/>
+
+        <!-- 左：手机 ↔ brain，上 push 进、下 pull 出 -->
+        <line class="ppd-line push" x1="344" y1="84" x2="438" y2="84"/>
+        <polygon class="ppd-head push" points="438,80 438,88 448,84"/>
+        <line class="ppd-line pull" x1="444" y1="108" x2="350" y2="108"/>
+        <polygon class="ppd-head pull" points="350,104 350,112 340,108"/>
+
+        <!-- 右：brain ↔ agent，上 push 进、下 pull 出 -->
+        <line class="ppd-line push" x1="728" y1="84" x2="634" y2="84"/>
+        <polygon class="ppd-head push" points="634,80 634,88 624,84"/>
+        <line class="ppd-line pull" x1="628" y1="108" x2="722" y2="108"/>
+        <polygon class="ppd-head pull" points="722,104 722,112 732,108"/>
+
+        <line class="ppd-flowline" x1="350" y1="84" x2="432" y2="84"/>
+        <line class="ppd-flowline" x1="438" y1="108" x2="356" y2="108"/>
+        <line class="ppd-flowline" x1="722" y1="84" x2="640" y2="84"/>
+        <line class="ppd-flowline" x1="632" y1="108" x2="716" y2="108"/>
+
+        <g class="ppd-card user">
+          <rect class="ppd-card-bg" x="31" y="62" width="114" height="66" rx="14"/>
+          <circle class="ppd-icon-bg" cx="55" cy="95" r="13"/>
+          <g class="ppd-icon" transform="translate(55 95)">
+            <rect x="-3.2" y="-8.5" width="6.4" height="10" rx="3.2"/>
+            <path d="M-6 -1.5a6 6 0 0 0 12 0"/>
+            <line x1="0" y1="4.5" x2="0" y2="8.5"/>
+          </g>
+          <text class="ppd-title" x="76" y="92" data-i18n="h.hero.ppYou">用户</text>
+          <text class="ppd-sub" x="76" y="109" data-i18n="h.hero.ppUserSub">随时开口</text>
+        </g>
+
+        <g class="ppd-card phone">
+          <rect class="ppd-card-bg" x="168" y="62" width="172" height="66" rx="14"/>
+          <circle class="ppd-icon-bg" cx="192" cy="95" r="13"/>
+          <g class="ppd-icon" transform="translate(192 95)">
+            <rect x="-5" y="-8.5" width="10" height="17" rx="2.2"/>
+            <line x1="-1.8" y1="6" x2="1.8" y2="6"/>
+          </g>
+          <text class="ppd-title" x="213" y="92" data-i18n="h.hero.ppClient">手机客户端</text>
+          <text class="ppd-sub" x="213" y="109" data-i18n="h.hero.ppClientSub">PP Friend · 录音 / 放音</text>
+        </g>
+
+        <g class="ppd-card server">
+          <rect class="ppd-card-bg" x="448" y="62" width="176" height="66" rx="14"/>
+          <circle class="ppd-icon-bg" cx="472" cy="95" r="13"/>
+          <g class="ppd-icon" transform="translate(472 95)">
+            <rect x="-7.5" y="-7.5" width="15" height="5.5" rx="1.4"/>
+            <rect x="-7.5" y="2" width="15" height="5.5" rx="1.4"/>
+            <line x1="-3.8" y1="-4.8" x2="-2.4" y2="-4.8"/>
+            <line x1="-3.8" y1="4.8" x2="-2.4" y2="4.8"/>
+          </g>
+          <text class="ppd-title" x="493" y="92" data-i18n="h.hero.ppServer">brain 服务端</text>
+          <text class="ppd-sub" x="493" y="109" data-i18n="h.hero.ppServerSub">消息枢纽</text>
+        </g>
+
+        <g class="ppd-badge">
+          <line class="ppd-badge-stem" x1="536" y1="50" x2="536" y2="62"/>
+          <rect x="498" y="30" width="76" height="20" rx="10"/>
+          <text x="536" y="40" text-anchor="middle" dominant-baseline="central">Brain API</text>
+        </g>
+
+        <g class="ppd-card agent">
+          <rect class="ppd-card-bg" x="732" y="62" width="136" height="66" rx="14"/>
+          <circle class="ppd-icon-bg" cx="756" cy="95" r="13"/>
+          <g class="ppd-icon" transform="translate(756 95)">
+            <path d="M0 -8.5 L2.3 -2.3 L8.5 0 L2.3 2.3 L0 8.5 L-2.3 2.3 L-8.5 0 L-2.3 -2.3 Z"/>
+          </g>
+          <text class="ppd-title" x="777" y="92" data-i18n="h.hero.ppAgent">agent</text>
+          <text class="ppd-sub" x="777" y="109" data-i18n="h.hero.ppAgentSub">理解 · 执行</text>
+        </g>
+
+        <text class="ppd-lane-label" x="394" y="48" text-anchor="middle"><tspan class="ppd-word push">Push</tspan><tspan class="ppd-lane-sep" dx="5">·</tspan><tspan class="ppd-lane-text" dx="5" data-i18n="h.hero.ppHumanPush">你的语音</tspan></text>
+        <text class="ppd-endpoint" x="394" y="60" text-anchor="middle">/human-to-brain</text>
+
+        <text class="ppd-lane-label" x="394" y="140" text-anchor="middle"><tspan class="ppd-word pull">Pull</tspan><tspan class="ppd-lane-sep" dx="5">·</tspan><tspan class="ppd-lane-text" dx="5" data-i18n="h.hero.ppHumanPull">它的回复</tspan></text>
+        <text class="ppd-endpoint" x="394" y="153" text-anchor="middle">/brain-to-human</text>
+
+        <text class="ppd-lane-label" x="678" y="48" text-anchor="middle"><tspan class="ppd-word push">Push</tspan><tspan class="ppd-lane-sep" dx="5">·</tspan><tspan class="ppd-lane-text" dx="5" data-i18n="h.hero.ppAgentPush">agent 文本</tspan></text>
+        <text class="ppd-endpoint" x="678" y="60" text-anchor="middle">/agent-to-brain</text>
+
+        <text class="ppd-lane-label" x="678" y="140" text-anchor="middle"><tspan class="ppd-word pull">Pull</tspan><tspan class="ppd-lane-sep" dx="5">·</tspan><tspan class="ppd-lane-text" dx="5" data-i18n="h.hero.ppAgentPull">人类文本</tspan></text>
+        <text class="ppd-endpoint" x="678" y="153" text-anchor="middle">/brain-to-agent</text>
+      </svg>
+
+      <svg class="ppd ppd-tall" viewBox="0 0 360 288" role="img" data-i18n-attr="aria-label:h.hero.ppAria" aria-label="用户把语音推给 brain，再把回复拉回手机；agent 把文本推给 brain，再把人的文本拉回去。四条通道同时开着。">
+        <defs>
+          <radialGradient id="ppAgentGlowTall">
+            <stop class="ppd-stop-glow-a" offset="0"/>
+            <stop class="ppd-stop-glow-b" offset="1"/>
+          </radialGradient>
+        </defs>
+
+        <circle class="ppd-glow" cx="180" cy="259" r="58" fill="url(#ppAgentGlowTall)"/>
+        <rect class="ppd-channel" x="156" y="114" width="48" height="34" rx="17"/>
+        <rect class="ppd-channel" x="156" y="200" width="48" height="34" rx="17"/>
+
+        <!-- 用户 → 手机：采音 / 放音 -->
+        <line class="ppd-line audio" x1="172" y1="50" x2="172" y2="60"/>
+        <polygon class="ppd-head audio" points="168,60 176,60 172,65"/>
+        <line class="ppd-line audio" x1="188" y1="63" x2="188" y2="53"/>
+        <polygon class="ppd-head audio" points="184,53 192,53 188,48"/>
+
+        <!-- 手机 ↔ brain：上 push 下、下 pull 上 -->
+        <line class="ppd-line push" x1="168" y1="114" x2="168" y2="146"/>
+        <polygon class="ppd-head push" points="164,146 172,146 168,152"/>
+        <line class="ppd-line pull" x1="192" y1="148" x2="192" y2="116"/>
+        <polygon class="ppd-head pull" points="188,116 196,116 192,110"/>
+
+        <!-- brain ↔ agent：上 push 上、下 pull 下 -->
+        <line class="ppd-line push" x1="168" y1="236" x2="168" y2="206"/>
+        <polygon class="ppd-head push" points="164,206 172,206 168,197"/>
+        <line class="ppd-line pull" x1="192" y1="198" x2="192" y2="232"/>
+        <polygon class="ppd-head pull" points="188,232 196,232 192,239"/>
+
+        <line class="ppd-flowline" x1="168" y1="118" x2="168" y2="144"/>
+        <line class="ppd-flowline" x1="192" y1="144" x2="192" y2="120"/>
+        <line class="ppd-flowline" x1="168" y1="234" x2="168" y2="208"/>
+        <line class="ppd-flowline" x1="192" y1="202" x2="192" y2="230"/>
+
+        <g class="ppd-card user">
+          <rect class="ppd-card-bg" x="88" y="4" width="184" height="42" rx="12"/>
+          <circle class="ppd-icon-bg" cx="112" cy="25" r="12"/>
+          <g class="ppd-icon" transform="translate(112 25)">
+            <rect x="-3.2" y="-8.5" width="6.4" height="10" rx="3.2"/>
+            <path d="M-6 -1.5a6 6 0 0 0 12 0"/>
+            <line x1="0" y1="4.5" x2="0" y2="8.5"/>
+          </g>
+          <text class="ppd-title" x="133" y="22" data-i18n="h.hero.ppYou">用户</text>
+          <text class="ppd-sub" x="133" y="38" data-i18n="h.hero.ppUserSub">随时开口</text>
+        </g>
+
+        <g class="ppd-card phone">
+          <rect class="ppd-card-bg" x="88" y="66" width="184" height="44" rx="12"/>
+          <circle class="ppd-icon-bg" cx="112" cy="88" r="12"/>
+          <g class="ppd-icon" transform="translate(112 88)">
+            <rect x="-5" y="-8.5" width="10" height="17" rx="2.2"/>
+            <line x1="-1.8" y1="6" x2="1.8" y2="6"/>
+          </g>
+          <text class="ppd-title" x="133" y="85" data-i18n="h.hero.ppClient">手机客户端</text>
+          <text class="ppd-sub" x="133" y="101" data-i18n="h.hero.ppClientSub">PP Friend · 录音 / 放音</text>
+        </g>
+
+        <g class="ppd-card server">
+          <rect class="ppd-card-bg" x="88" y="152" width="184" height="44" rx="12"/>
+          <circle class="ppd-icon-bg" cx="112" cy="174" r="12"/>
+          <g class="ppd-icon" transform="translate(112 174)">
+            <rect x="-7.5" y="-7.5" width="15" height="5.5" rx="1.4"/>
+            <rect x="-7.5" y="2" width="15" height="5.5" rx="1.4"/>
+            <line x1="-3.8" y1="-4.8" x2="-2.4" y2="-4.8"/>
+            <line x1="-3.8" y1="4.8" x2="-2.4" y2="4.8"/>
+          </g>
+          <text class="ppd-title" x="133" y="171" data-i18n="h.hero.ppServer">brain 服务端</text>
+          <text class="ppd-sub" x="133" y="187" data-i18n="h.hero.ppServerSub">消息枢纽</text>
+        </g>
+
+        <g class="ppd-badge">
+          <line class="ppd-badge-stem" x1="272" y1="174" x2="282" y2="174"/>
+          <rect x="282" y="165" width="64" height="18" rx="9"/>
+          <text x="314" y="174" text-anchor="middle" dominant-baseline="central">Brain API</text>
+        </g>
+
+        <g class="ppd-card agent">
+          <rect class="ppd-card-bg" x="88" y="238" width="184" height="42" rx="12"/>
+          <circle class="ppd-icon-bg" cx="112" cy="259" r="12"/>
+          <g class="ppd-icon" transform="translate(112 259)">
+            <path d="M0 -8.5 L2.3 -2.3 L8.5 0 L2.3 2.3 L0 8.5 L-2.3 2.3 L-8.5 0 L-2.3 -2.3 Z"/>
+          </g>
+          <text class="ppd-title" x="133" y="256" data-i18n="h.hero.ppAgent">agent</text>
+          <text class="ppd-sub" x="133" y="272" data-i18n="h.hero.ppAgentSub">理解 · 执行</text>
+        </g>
+
+        <text class="ppd-lane-label" x="154" y="131" text-anchor="end"><tspan class="ppd-word push">Push</tspan><tspan class="ppd-lane-sep" dx="4">·</tspan><tspan class="ppd-lane-text" dx="4" data-i18n="h.hero.ppHumanPush">你的语音</tspan></text>
+        <text class="ppd-lane-label" x="206" y="131" text-anchor="start"><tspan class="ppd-word pull">Pull</tspan><tspan class="ppd-lane-sep" dx="4">·</tspan><tspan class="ppd-lane-text" dx="4" data-i18n="h.hero.ppHumanPull">它的回复</tspan></text>
+
+        <text class="ppd-lane-label" x="154" y="217" text-anchor="end"><tspan class="ppd-word push">Push</tspan><tspan class="ppd-lane-sep" dx="4">·</tspan><tspan class="ppd-lane-text" dx="4" data-i18n="h.hero.ppAgentPush">agent 文本</tspan></text>
+        <text class="ppd-lane-label" x="206" y="217" text-anchor="start"><tspan class="ppd-word pull">Pull</tspan><tspan class="ppd-lane-sep" dx="4">·</tspan><tspan class="ppd-lane-text" dx="4" data-i18n="h.hero.ppAgentPull">人类文本</tspan></text>
+      </svg>
+    </div>
+    <p class="pp-caption" data-i18n="h.hero.ppCaption">PP 是 Push and Pull</p>
+    <p class="pp-caption-sub" data-i18n="h.hero.ppCaptionSub">四路并行：两边各推各拉，不是一问一答。</p>
     <p class="made" data-i18n="h.hero.made">这个项目本身的开发就是用 PP Friend 跑的：对着手机说话来驱动编码，需求、审查和修复一路靠语音说完。</p>
     <div class="cta">
       <a class="button" href="enroll/" data-i18n="h.hero.ctaEnroll">打开声纹注册工具</a>
@@ -28,32 +223,43 @@
     </div>
   </header>
 
+  <section class="block" id="motivation">
+    <h2 data-i18n="h.mot.title">什么时候用</h2>
+    <p class="lead" data-i18n="h.mot.lead">agent 能干长活了，人不用一直坐在电脑前。</p>
+    <ul class="feel">
+      <li data-i18n="h.mot.i1">走路、做饭、手上忙着别的，开口就行。</li>
+      <li data-i18n="h.mot.i2">离开电脑，不用回来看进度；它有话会说。</li>
+      <li data-i18n="h.mot.i3">手腕疼，不想打字，也不想举手机。</li>
+    </ul>
+    <p class="lead mt" data-i18n="h.mot.close">它一直在旁边，不用打开，也不用盯着。</p>
+  </section>
+
   <section class="block" id="features">
     <h2 data-i18n="h.feat.title">主要能力</h2>
     <div class="feat-grid">
       <div class="card">
         <h3 data-i18n="h.feat.duplex.t">全双工</h3>
-        <p data-i18n="h.feat.duplex.d">你说话它听，它说话你听，两个方向同时开着，不用轮流按键。</p>
+        <p data-i18n="h.feat.duplex.d">它说话时也竖着耳朵。两边同时开着，像打电话，不像对讲机。</p>
       </div>
       <div class="card">
         <h3 data-i18n="h.feat.barge.t">可打断</h3>
-        <p data-i18n="h.feat.barge.d">它正在说的时候你开口，本地断句确认连续 350 ms 人声后立刻停播，并把没听到的那段文字报给 brain，它不会以为自己讲完了。打断是独立开关，默认关闭。</p>
+        <p data-i18n="h.feat.barge.d">它讲到一半你开口，确认是人在说话就立刻停，并把没讲完的部分报给服务端。默认关，开关在设置里。</p>
       </div>
       <div class="card">
         <h3 data-i18n="h.feat.bg.t">后台不中断</h3>
-        <p data-i18n="h.feat.bg.d">前台服务撑住录音，切到别的 App 或锁屏，对话继续。</p>
+        <p data-i18n="h.feat.bg.d">切去别的 App、锁屏，对话都还在继续。</p>
       </div>
       <div class="card">
         <h3 data-i18n="h.feat.vad.t">本地断句</h3>
-        <p data-i18n="h.feat.vad.d">Silero VAD 跑在手机上（Rust），按 512 采样（32 ms）一帧推进。只把成句的片段传上去，不是把连续音频整段推流。</p>
+        <p data-i18n="h.feat.vad.d">一句话说完才上传整句，不是把麦克风一直推流上去。</p>
       </div>
       <div class="card">
         <h3 data-i18n="h.feat.vp.t">声纹门控</h3>
-        <p data-i18n="h.feat.vp.d">ECAPA 声纹和这一段语音算余弦相似度，每段最多看开头 3 秒，低于阈值（默认 0.4）整段丢弃：家人的话不上传，也不进 agent 的上下文。</p>
+        <p data-i18n="h.feat.vp.d">先比对是不是你的声音，不像就整段丢掉，家人的话不会发出去。</p>
       </div>
       <div class="card">
         <h3 data-i18n="h.feat.profiles.t">多档案</h3>
-        <p data-i18n="h.feat.profiles.d">每个档案一套 brain 配置、一份独立历史，可以同时跑；只有聚焦的那个播声音，其余只记文字。想开一段新对话，换个 brain 名字就行。</p>
+        <p data-i18n="h.feat.profiles.d">同时挂着好几个 brain，各记各的账；只有当前这个会出声。</p>
       </div>
     </div>
   </section>
@@ -89,6 +295,14 @@
     </div>
   </section>
 
+  <section class="block" id="brain">
+    <h2 data-i18n="h.brain.title">自己实现一个 brain</h2>
+    <p class="lead" data-i18n="h.brain.body">服务端就是两个 HTTP 端点，MessagePack 载荷。协议不长，一页写得完，照着就能写一个自己的 brain。</p>
+    <div class="row">
+      <a class="button secondary" href="brain-api/" data-i18n="h.brain.button">看 Brain API 协议</a>
+    </div>
+  </section>
+
   <section class="block" id="privacy">
     <h2 data-i18n="h.privacy.title">隐私与自托管</h2>
     <ul class="tick">
@@ -103,7 +317,7 @@
   <section class="block" id="quickstart">
     <h2 data-i18n="h.quick.title">快速开始</h2>
     <p class="lead" data-i18n="h.quick.req">前提：Flutter 3.47 以上、Android NDK、Rust 工具链。新克隆不需要 NDK 就能构建，jniLibs 里的 .so 已入库。</p>
-    <pre class="code">tools/fetch_onnxruntime.sh   <span class="c"># 宿主跑 cargo test 才需要</span>
+    <pre class="code">tools/fetch_onnxruntime.sh   <span class="c" data-i18n="h.quick.fetchNote"># 宿主跑 cargo test 才需要</span>
 flutter build apk --release</pre>
     <p class="hint mt" data-i18n="h.quick.rust">只有改了 Rust 源码才需要重跑 tools/build_rust_android.sh（产物要一起提交）。</p>
     <p class="lead mt" data-i18n="h.quick.mock">没有 brain 也能端到端自测：仓库带了一个按协议手写实现的假 brain，内含一份独立的 MessagePack 实现，用来验证协议理解有没有跑偏。</p>
