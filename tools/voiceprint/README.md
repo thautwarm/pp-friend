@@ -6,9 +6,10 @@ ECAPA-TDNN embedding，导出成 App 能直接读的 `spkemb.f32`。
 **全部计算都在本机浏览器内完成，音频不会上传。**
 onnxruntime-web 1.30.0 优先从 jsDelivr 加载（wasm 压缩后约 4 MiB），
 失败就退回 `vendor/onnxruntime-web/dist/`（从 npm 包里取的
-`ort.wasm.min.js` + `ort-wasm-simd-threaded.mjs/.wasm`）。localhost 和
-file:// 下顺序反过来，先用本地，开发时不需要联网。22 MiB 的模型超过
-jsDelivr 的 GitHub 通道上限，仍然从页面同源（GitHub Pages）加载。
+`ort.wasm.min.js` + `ort-wasm-simd-threaded.mjs/.wasm`）。localhost 下
+先用本地，开发时不需要联网；file:// 下浏览器读不了同目录的 wasm，反过来
+先走 CDN，模型用页面上的「选择模型文件」手动挑。22 MiB 的模型超过
+jsDelivr 的 GitHub 通道上限，线上从页面同源（GitHub Pages）加载。
 
 ## 目录
 

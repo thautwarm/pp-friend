@@ -463,7 +463,7 @@ class _SettingsPageState extends State<SettingsPage>
                 OutlinedButton.icon(
                   onPressed: _openVoiceprintPage,
                   icon: const Icon(Icons.open_in_new),
-                  label: const Text('打开注册网页'),
+                  label: const Text('打开声纹录制页面'),
                 ),
                 OutlinedButton.icon(
                   onPressed: _importVoiceprint,
