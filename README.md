@@ -19,6 +19,8 @@
 - **后台不中断**：切到别的 App 或锁屏，对话继续（前台服务撑住录音）
 - **本地断句**：Silero VAD 跑在手机上（Rust），只把成句的片段传上去，
   不是把连续音频整段推流
+- **说话人识别**：用注册声纹和这一段语音算 ECAPA 余弦相似度，
+  够长的句子低于阈值就整段丢掉 —— 家人说话不上传、也不进 agent 的上下文
 - **多个档案**：每个档案一套 brain 配置、一份独立历史，可以同时跑；
   但只有聚焦的那个会播声音，其余只记文字
 
@@ -31,6 +33,7 @@
 |---|---|
 | UI / 业务 | Flutter（Dart 3.13） |
 | 本地断句 | Rust + Silero VAD，flutter_rust_bridge 2.13 |
+| 说话人门控 | Rust + ECAPA 声纹余弦（ONNX，84.8MB）；声纹由 `tools/voiceprint` 网页生成 |
 | 音频引擎 | Android 原生（Kotlin）：AudioRecord / AudioTrack / AEC |
 | 上行编码 | Ogg Opus 16kHz（MediaCodec + MediaMuxer） |
 | 下行解码 | Ogg Opus 24kHz（MediaExtractor + MediaCodec）→ 重采样到 16k |
@@ -68,9 +71,10 @@ tools/mock_brain.py
 
 ```
 lib/            Dart 侧：配置、会话、存储、UI
-rust/           本地断句（Silero VAD）与 frb 绑定
+rust/           本地断句（Silero VAD）、说话人门控（ECAPA/pVAD）与 frb 绑定
 android/        原生音频引擎、前台服务、通知
-tools/          构建脚本、假 brain、图标生成
+assets/         模型资产（pvad.onnx、ecapa.onnx）
+tools/          构建脚本、假 brain、声纹注册网页、图标生成
 docs/           设计与协议文档
 test/           单元测试
 ```
