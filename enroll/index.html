@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title data-i18n="meta.title.enroll">声纹注册 · PP Friend</title>
+<meta name="description" data-i18n-attr="content:meta.desc.enroll"
+      content="在浏览器本地为 PP Friend 注册声纹：录音或选择音频文件，计算 192 维 ECAPA 声纹并导出 spkemb.f32。音频不上传。">
+<link rel="stylesheet" href="../assets/site.css">
+<!--
+  实现说明（只在源码中保留，不渲染给用户）：
+
+  - 音频不会离开本机：解码、下混、重采样、推理全部在页面内完成，不上传
+    服务器；录音只保存在当前标签页，刷新即清空。
+  - onnxruntime-web 固定 1.30.0。线上优先从 jsDelivr 取 js 和 wasm
+    （wasm 压缩后约 4MB），失败就退回站点根目录的
+    vendor/onnxruntime-web/dist/。本地调试（localhost）反过来，先用本地，
+    免得开发时还要联网；file:// 下浏览器禁止 fetch 同目录的 wasm，
+    也先走 CDN。22MB 的模型超过 jsDelivr 的 GitHub 通道上限，继续从页面
+    同源（GitHub Pages）的 models/ecapa.onnx 拿。file:// 下浏览器禁止
+    fetch 模型文件，这种情况下用页面上的「选择模型文件」手动挑。
+  - 模型路径 ../models/ecapa.onnx（站点根目录的 models/）。契约：
+    输入 wav，float32 [1, T]（T 个 16 kHz 采样点）；输出 emb，
+    float32 [1, 192]，未归一化。权重来自 FireRedTeam/FireRedChat-pvad
+    的 spkrec-ecapa-voxceleb。
+  - 音频处理：多声道先平均下混为单声道；解码优先在 16 kHz 的
+    OfflineAudioContext 中完成，必要时再用浏览器原生重采样器转换。
+    少于 0.5 秒拒绝；每个推理窗口 3 秒，最后不足 3 秒的片段向前重叠；
+    录音上限 30 秒。
+  - 导出格式：spkemb.f32 是 192 个 little-endian float32，共 768 字节，
+    无文件头，数值已 L2 归一化（App 端再次归一化是幂等的）。
+    spkemb.json 包含同样的数值，以及维度、范数、窗口一致性和模型信息。
+  - 每次重新录音或选择文件都会先 resetResult()：作废上一次结果并禁用
+    下载按钮，避免新音频处理失败时把上一次的声纹当成这一次的结果导出。
+-->
+</head>
+<body>
+<nav class="site-nav">
+  <a class="brand" href="../">PP Friend</a>
+  <span class="spacer"></span>
+  <a class="nav-link" href="../" data-i18n="nav.home">主页</a>
+  <a class="nav-link" href="https://github.com/thautwarm/pp-friend" data-i18n="nav.github">GitHub</a>
+  <span id="langSwitch"></span>
+</nav>
+
+<main class="narrow">
+  <header class="page-head">
+    <div>
+      <h1 data-i18n="vp.title">声纹注册</h1>
+      <p class="sub" data-i18n="vp.sub">录一段语音，或选择音频文件。</p>
+      <p class="privacy" data-i18n="vp.privacy">纯前端计算：音频不离开浏览器，声纹只保存到本机，不上传任何数据。页面可以保存到本地运行。</p>
+    </div>
+    <span id="modelStatus" class="pill pending" data-i18n="vp.model.loading">模型加载中</span>
+  </header>
+
+  <div id="modelProgressRow" class="progress-row model-progress">
+    <div class="bar"><div id="modelProgress"></div></div>
+    <span id="modelProgressText" class="progress-text" data-i18n="vp.progress.wait">等待模型</span>
+  </div>
+
+  <div id="modelPickerRow" class="row mt hidden">
+    <label class="button secondary">
+      <span data-i18n="vp.pickModel">选择模型文件</span>
+      <input id="modelFile" type="file" accept=".onnx,application/octet-stream" hidden>
+    </label>
+  </div>
+
+  <div id="error" class="error" hidden></div>
+
+  <section class="card">
+    <div class="card-head">
+      <h2 data-i18n="vp.addVoice">添加语音</h2>
+      <span id="audioStatus" class="pill" data-i18n="vp.audio.wait">等待音频</span>
+    </div>
+    <div id="drop" class="drop" role="button" tabindex="0">
+      <strong data-i18n="vp.drop.title">选择音频文件</strong>
+      <span class="small" data-i18n="vp.drop.hint">拖放到这里 · wav / mp3 / m4a / ogg</span>
+      <input id="audioFile" type="file" accept="audio/*,.wav,.mp3,.m4a,.ogg" hidden>
+    </div>
+    <div class="row mt">
+      <button id="micBtn" class="secondary" type="button" data-i18n="vp.mic.start">开始录音</button>
+      <span id="micTimer" class="hint"></span>
+    </div>
+    <div id="audioInfo" class="audio-info"></div>
+    <div class="progress-row hidden" id="computeRow">
+      <div class="bar"><div id="computeProgress"></div></div>
+      <span id="computeProgressText" class="progress-text" data-i18n="vp.audio.infer">推理中</span>
+    </div>
+  </section>
+
+  <section class="card" id="resultCard" hidden>
+    <div class="card-head">
+      <h2 data-i18n="vp.result">声纹结果</h2>
+      <span class="pill ok" id="resultPill" data-i18n="vp.result.done">已完成</span>
+    </div>
+    <div id="windowInfo" class="audio-info"></div>
+    <div id="consistency"></div>
+    <div class="metrics">
+      <div class="metric">
+        <span class="k" data-i18n="vp.metric.minCos">最低 cos</span>
+        <span class="v" id="minCos">—</span>
+      </div>
+      <div class="metric">
+        <span class="k" data-i18n="vp.metric.windows">窗口数</span>
+        <span class="v" id="windowCount">—</span>
+      </div>
+      <span id="rawNorm" hidden></span>
+    </div>
+
+    <details>
+      <summary data-i18n="vp.showValues">查看 192 维数值</summary>
+      <div class="strip-wrap">
+        <div id="strip" class="strip" role="img" data-i18n-attr="aria-label:vp.strip.aria" aria-label="192 维声纹数值热力条"></div>
+        <div class="legend">
+          <span data-i18n="vp.legend.neg">负值</span>
+          <span class="ramp" aria-hidden="true"></span>
+          <span data-i18n="vp.legend.pos">正值</span>
+        </div>
+      </div>
+      <div id="values" class="values"></div>
+    </details>
+
+    <div class="downloads">
+      <button id="dlF32" type="button" data-i18n="vp.dl.f32">导出 spkemb.f32</button>
+      <button id="dlJson" type="button" class="secondary" data-i18n="vp.dl.json">导出 spkemb.json</button>
+    </div>
+  </section>
+</main>
+
+<script src="../assets/i18n.js"></script>
+<script src="../assets/voiceprint.js"></script>
+</body>
+</html>
