@@ -371,10 +371,8 @@ class _SettingsPageState extends State<SettingsPage>
           title: '本地断句',
           children: [
             Text(
-              '切句必须留在本地：否则就得把整条麦克风流实时推给服务端，'
-              '那是另一套协议。判据是 Rust 侧的 Silero VAD（ONNX 模型）。\n\n'
-              '这一组是全局的，不跟档案走 —— 每个档案一套的话，'
-              '切档案就得重建那个 1.26MB 的模型，而切换必须是立刻的。',
+              '在手机上用 Silero VAD 切句，只上传成句的片段。\n'
+              '这些参数是全局的，切换档案不会重新加载模型。',
               style: theme.textTheme.bodySmall
                   ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
             ),
@@ -415,29 +413,15 @@ class _SettingsPageState extends State<SettingsPage>
         SettingsSection(
           title: '说话人识别',
           children: [
-            Text(
-              '只把注册过的那个人的声音上传给 brain。家人说话会被整段丢掉：'
-              '不上传，也不会进消息流，agent 的上下文里不会混进别人的话。\n\n'
-              '声纹由 tools/voiceprint 那个网页生成（在本机算，音频不外传）。'
-              '把导出的 spkemb.f32 拷到手机上，在这里导入。\n\n'
-              '用的是 pVAD（FireRedChat，Apache-2.0）加一道 ECAPA 声纹比对：'
-              '正常长度的句子看两段声音的相似度，太短的句子才退回 pVAD。'
-              '它不转写、也不分离重叠的说话声 —— 你和别人同时说，还是会混进去。',
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-            ),
-            const SizedBox(height: 12),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               value: widget.controller.config.pvadEnabled,
               onChanged: (enabled) => widget.controller.updateConfig(
                 widget.controller.config.copyWith(pvadEnabled: enabled),
               ),
-              title: const Text('只上传本人的声音'),
+              title: const Text('只识别本人的声音'),
               subtitle: Text(
-                widget.controller.hasVoiceprint
-                    ? '已导入声纹。关掉它，所有人说的话都会上传。'
-                    : '还没导入声纹 —— 导入之后才会生效。',
+                widget.controller.hasVoiceprint ? '已导入声纹' : '需要先导入声纹',
               ),
             ),
             const SizedBox(height: 8),
@@ -458,13 +442,17 @@ class _SettingsPageState extends State<SettingsPage>
                   ),
               ],
             ),
-            const SizedBox(height: 12),
-            SettingsTextField(
-              controller: _pvadMinCosine,
-              label: '声纹相似度阈值',
-              hint: '0.40 —— 同一个人通常 0.5 以上，不同人 0.3 以下。调高更严',
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            ),
+            // 没导入声纹时这个数没有任何意义，先不占位置。
+            if (widget.controller.hasVoiceprint) ...[
+              const SizedBox(height: 12),
+              SettingsTextField(
+                controller: _pvadMinCosine,
+                label: '相似度阈值',
+                hint: '0.40',
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+              ),
+            ],
           ],
         ),
         const SizedBox(height: 16),
@@ -480,9 +468,8 @@ class _SettingsPageState extends State<SettingsPage>
               ),
               title: const Text('音量减键清空队列'),
               subtitle: const Text(
-                '开着：AI 正在说话时按音量减等于让它闭嘴。只在 App 前台生效，\n'
-                '后台和锁屏由通知栏的「停止说话」按钮兜着。\n'
-                '关掉：音量减就是普通的调音量，想清空走那个通知按钮。',
+                '开着：AI 说话时按音量减让它闭嘴（仅前台）。\n'
+                '后台和锁屏用通知栏的「停止说话」。',
               ),
             ),
           ],
@@ -501,11 +488,8 @@ class _SettingsPageState extends State<SettingsPage>
         borderRadius: BorderRadius.circular(12),
       ),
       child: Text(
-        '识别和合成都在 brain 那边，手机只负责采集、切句、上传、播放。\n'
-        '/human-to-brain 把你说的话换成文本，/brain-to-human 是持续轮询的阻塞请求。\n\n'
-        '对话上下文仍然只挂在 brain_id 上，删掉本机历史不影响对方记得什么。\n'
-        '本机存的是「展示用的历史」（主界面上那些话），不是对话上下文。'
-        '所以换一个 brain_id 也不会自动带出对方的记录 —— 那本来就是两段对话。',
+        '识别和合成在 brain 那边，手机只负责采集、切句、上传、播放。\n'
+        '本机保存的是展示用的历史，不是对话上下文；删掉它不影响 brain 那边的记忆。',
         style: theme.textTheme.bodySmall?.copyWith(
           color: theme.colorScheme.onSecondaryContainer,
         ),

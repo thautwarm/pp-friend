@@ -82,6 +82,24 @@ class SileroSegmenter implements Segmenter {
 
     if (result.speaking && !_speaking) onSpeechStart();
 
+    // 先落状态再回调：`onUtterance` 里要读这次 feed 的真实耗时（声纹推理
+    // 就发生在里面），放到回调后面读到的还是上一次的。这个数只在调试日志
+    // 和面板上用，不影响判定。
+    _speaking = result.speaking;
+    _stats = SegmenterStats(
+      speaking: result.speaking,
+      probability: result.prob,
+      bufferedMs: result.bufferedMs,
+      droppedMs: result.droppedMs,
+      forcedCuts: _handle.forcedCuts(),
+      lastFeedMicros: _watch.elapsedMicroseconds,
+      pvadEnabled: result.pvadEnabled,
+      pvadProb: result.pvadProb,
+      pvadFiltered: _handle.pvadFiltered(),
+      speakerVerifyEnabled: result.speakerVerifyEnabled,
+      speakerCos: result.speakerCos,
+    );
+
     for (final s in result.segments) {
       onUtterance(
         SpeechSegment(
@@ -112,20 +130,6 @@ class SileroSegmenter implements Segmenter {
       }
     }
 
-    _speaking = result.speaking;
-    _stats = SegmenterStats(
-      speaking: result.speaking,
-      probability: result.prob,
-      bufferedMs: result.bufferedMs,
-      droppedMs: result.droppedMs,
-      forcedCuts: _handle.forcedCuts(),
-      lastFeedMicros: _watch.elapsedMicroseconds,
-      pvadEnabled: result.pvadEnabled,
-      pvadProb: result.pvadProb,
-      pvadFiltered: _handle.pvadFiltered(),
-      speakerVerifyEnabled: result.speakerVerifyEnabled,
-      speakerCos: result.speakerCos,
-    );
   }
 
   @override

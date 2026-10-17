@@ -341,7 +341,8 @@ class ConversationController extends ChangeNotifier {
     debugPrint('SPK drop ${segment.durationMs}ms '
         'cos=${segment.speakerCos.toStringAsFixed(3)} '
         'pvad=${segment.pvadScore.toStringAsFixed(3)} '
-        'ratio=${segment.pvadTargetRatio.toStringAsFixed(2)}');
+        'ratio=${segment.pvadTargetRatio.toStringAsFixed(2)} '
+        'feed=${_segmenter?.stats.lastFeedMicros ?? 0}us');
     _filteredLogCount++;
     if (_filteredLogCount % 5 != 1) return;
     final detail = segment.speakerCos >= 0
@@ -1019,7 +1020,8 @@ class ConversationController extends ChangeNotifier {
     debugPrint('SPK keep ${segment.durationSeconds.toStringAsFixed(2)}s '
         'cos=${segment.speakerCos.toStringAsFixed(3)} '
         'pvad=${segment.pvadScore.toStringAsFixed(3)} '
-        'ratio=${segment.pvadTargetRatio.toStringAsFixed(2)}');
+        'ratio=${segment.pvadTargetRatio.toStringAsFixed(2)} '
+        'feed=${_segmenter?.stats.lastFeedMicros ?? 0}us');
     _userSpeaking = false;
     // 这轮说完了，下一轮从头数起 —— 不然上一句攒的时长会算到下一句头上，
     // 让一句很轻的"嗯"也够格打断。

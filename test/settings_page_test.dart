@@ -112,6 +112,10 @@ void main() {
       await tester.pumpAndSettle();
     }
     expect(tile, findsOneWidget, reason: '滚到底也该看得见这一项');
+    // 文案缩短之后，这一项可能已经构建进树里、但还停在视口外。
+    // 不滚到可见位置就点，点击会落空（tap 只打警告，断言随后失败）。
+    await tester.ensureVisible(tile);
+    await tester.pumpAndSettle();
     await tester.tap(tile);
     await tester.pumpAndSettle();
 
