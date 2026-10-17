@@ -87,6 +87,7 @@
   h1 { font-size: 28px; line-height: 1.2; margin: 0; letter-spacing: -0.02em; }
   h2 { font-size: 16px; margin: 0; letter-spacing: 0.01em; }
   .sub { color: var(--ink-2); margin: 6px 0 0; }
+  .privacy { color: var(--muted); font-size: 13px; margin: 8px 0 0; }
   .card {
     background: var(--surface);
     border: 1px solid var(--line);
@@ -251,6 +252,8 @@
     <div>
       <h1>声纹注册</h1>
       <p class="sub">录一段语音，或选择音频文件。</p>
+      <p class="privacy">纯前端计算：音频不离开浏览器，声纹只保存到本机，
+        不上传任何数据。页面可以保存到本地运行。</p>
     </div>
     <span id="modelStatus" class="pill pending">模型加载中</span>
   </header>
@@ -471,11 +474,16 @@
 
   // 线上：先 CDN，失败退本地。本地开发：先本地，省得每次都要联网。
   async function setupOrt() {
-    const isLocalDev = location.protocol === "file:" ||
+    const isFile = location.protocol === "file:";
+    const isLocalDev =
       /^(localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0)?$/.test(location.hostname);
-    const bases = isLocalDev
-      ? [ORT_LOCAL_BASE, ORT_CDN_BASE]
-      : [ORT_CDN_BASE, ORT_LOCAL_BASE];
+    // file:// 下浏览器禁止 fetch 同目录的 wasm，本地 vendor 用不了，
+    // 所以先走 CDN；本地开发（localhost）反过来，先本地。
+    const bases = isFile
+      ? [ORT_CDN_BASE, ORT_LOCAL_BASE]
+      : isLocalDev
+        ? [ORT_LOCAL_BASE, ORT_CDN_BASE]
+        : [ORT_CDN_BASE, ORT_LOCAL_BASE];
     for (const base of bases) {
       const fromCdn = base === ORT_CDN_BASE;
       try {
@@ -570,8 +578,11 @@
       setProgress(el.modelProgress, el.modelProgressText, 0, "自动读取失败");
       el.modelPickerRow.classList.remove("hidden");
       // 不一定是致命错误：用户还可以手动选择模型文件。
-      showError("模型加载失败：" + (err && err.message ? err.message : err) +
-        "。请选择模型文件，或通过本地 HTTP 服务打开页面。");
+      // file:// 下这是必经之路：浏览器不允许 fetch 同目录的 onnx。
+      const hint = location.protocol === "file:"
+        ? "。点「选择模型文件」，选同目录的 models/ecapa.onnx 即可。"
+        : "。请选择模型文件，或通过本地 HTTP 服务打开页面。";
+      showError("模型加载失败：" + (err && err.message ? err.message : err) + hint);
     }
   }
 
