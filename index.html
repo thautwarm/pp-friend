@@ -282,7 +282,7 @@
       <span class="arrow">→</span>
       <div class="node"><b data-i18n="h.arch.flow.speaker">扬声器</b></div>
     </div>
-    <p class="hint mt" data-i18n="h.arch.note">上行 Ogg Opus 16 kHz，下行 Ogg Opus 24 kHz（解码后重采样到 16 kHz）。通信是 HTTP + MessagePack，两条独立的长轮询循环。</p>
+    <p class="hint mt" data-i18n="h.arch.note">上行 Ogg Opus 16 kHz，下行 Ogg Opus 24 kHz（解码后重采样到 16 kHz）。通信是 HTTP + MessagePack：下行一条长轮询流，上行逐句串行上传。</p>
 
     <div class="table-scroll">
       <table class="stack" aria-label="Stack">
@@ -292,7 +292,7 @@
         <tr><th data-i18n="h.arch.row3.k">声纹门控</th><td data-i18n="h.arch.row3.v">Rust + ECAPA（int8 ONNX，23 MB）；声纹由本站创建并下载</td></tr>
         <tr><th data-i18n="h.arch.row4.k">音频引擎</th><td data-i18n="h.arch.row4.v">Android 原生（Kotlin）：AudioRecord / AudioTrack / AEC</td></tr>
         <tr><th data-i18n="h.arch.row5.k">上行 / 下行</th><td data-i18n="h.arch.row5.v">Ogg Opus 16 kHz 上行；Ogg Opus 24 kHz 下行，重采样到 16 kHz</td></tr>
-        <tr><th data-i18n="h.arch.row6.k">与 brain 通信</th><td data-i18n="h.arch.row6.v">HTTP + MessagePack，两条独立长轮询循环</td></tr>
+        <tr><th data-i18n="h.arch.row6.k">与 brain 通信</th><td data-i18n="h.arch.row6.v">HTTP + MessagePack；下行长轮询，上行串行队列</td></tr>
         <tr><th data-i18n="h.arch.row7.k">历史落盘</th><td data-i18n="h.arch.row7.v">NDJSON，按 1 MB 分片，只增不删，仅用于展示</td></tr>
         <tr><th data-i18n="h.arch.row8.k">平台</th><td data-i18n="h.arch.row8.v">Android arm64，minSdk 29</td></tr>
       </table>
@@ -312,7 +312,7 @@
     <ul class="tick">
       <li data-i18n="h.privacy.i1">识别、对话、合成全部运行在你自己的服务端，音频不去第三方服务。</li>
       <li data-i18n="h.privacy.i2">声纹门控在手机本地完成：不够像本人的片段在上传之前就被丢弃。</li>
-      <li data-i18n="h.privacy.i3">声纹创建在浏览器里完成，录音和推理都不出本机（见本站声纹创建工具）。</li>
+      <li data-i18n="h.privacy.i3">声纹在浏览器里创建并下载，录音和推理都不出本机（见本站的创建页面）。</li>
       <li data-i18n="h.privacy.i4">对话上下文在服务端，由 brain_id（人起的名字）区分；客户端只保存展示用历史。</li>
       <li data-i18n="h.privacy.i5">客户端与服务端之间用一个可选的 Bearer token 鉴权；token 为空表示该部署未启用鉴权。</li>
     </ul>
@@ -330,7 +330,7 @@ flutter build apk --release</pre>
 
   <section class="block" id="enroll">
     <h2 data-i18n="h.enroll.title">声纹创建工具</h2>
-    <p class="lead" data-i18n="h.enroll.body">说话人识别需要一份本人声纹。在浏览器里录一段话或选一个音频文件，算出 192 维声纹并下载 spkemb.f32（768 字节，float32），再到 App 的设置 → 通用 → 说话人识别里导入。录音和推理都在浏览器本地完成，音频不上传。</p>
+    <p class="lead" data-i18n="h.enroll.body">可选。声纹用来过滤别人的声音和杂音，只把你自己的话发给 agent。在浏览器里录一段话或选一个音频文件，创建 192 维声纹并下载 spkemb.f32（768 字节，float32），再到 App 的设置 → 通用 → 说话人识别里导入。录音和推理都在浏览器本地完成，音频不上传。</p>
     <div class="row mt">
       <a class="button" href="enroll/" data-i18n="h.enroll.button">本地创建你的声纹并下载</a>
     </div>
