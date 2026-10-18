@@ -2,7 +2,7 @@
  *
  * 用法：
  *   - 元素加 data-i18n="key"（textContent）或 data-i18n-html="key"（innerHTML，
- *     仅用于字典内自带的少量 <b>/<strong> 标记），属性用
+ *     仅用于字典内自带的少量 <b>/<strong>/<code> 标记），属性用
  *     data-i18n-attr="title:key;aria-label:key2"。
  *   - 动态字符串用 PP_I18N.t(key, {name: value})，占位符写作 {name}。
  *   - 语言优先级：localStorage("pp-friend-lang") > navigator.language，默认 en。
@@ -136,7 +136,7 @@ window.PP_I18N = (() => {
       "b.ov.no": "未使用",
       "b.ov.kind": "kind 是载荷判别符：empty 是没有内容，text 是有文本。它不代表操作成败，那是 HTTP 状态码的事。",
       "b.ov.loops": "客户端跑两条互相独立的循环：一条在 /brain-to-human 上长轮询并读取前导和连续音频流，直到这条回复说完；另一条把断句切出来的语音按顺序串行发到 /human-to-brain。",
-      "b.ov.framed": "前导 + 连续流：[u32 文本长度][文本][flags]，后面是 Ogg Opus 音频",
+      "b.ov.framed": "前导 + 连续流：<code>[u32 文本长度][文本][flags]</code>，后面是 Ogg Opus 音频",
 
       "b.auth.title": "鉴权",
       "b.auth.body": "两个端点都支持 Bearer token：",
@@ -409,7 +409,7 @@ window.PP_I18N = (() => {
       "b.ov.no": "Not used",
       "b.ov.kind": "kind is a payload discriminator: empty means no content, text means there is text. It does not report success or failure; that is what HTTP status codes are for.",
       "b.ov.loops": "The client runs two independent loops: one long-polls /brain-to-human and reads the prelude plus the continuous audio stream until the reply ends; the other uploads endpointed utterances to /human-to-brain, one at a time, in order.",
-      "b.ov.framed": "Prelude + continuous stream: [u32 text length][text][flags], followed by an Ogg Opus audio stream",
+      "b.ov.framed": "Prelude + continuous stream: <code>[u32 text length][text][flags]</code>, followed by an Ogg Opus audio stream",
 
       "b.auth.title": "Authentication",
       "b.auth.body": "Both endpoints accept a Bearer token:",
@@ -682,7 +682,7 @@ window.PP_I18N = (() => {
       "b.ov.no": "未使用",
       "b.ov.kind": "kind はペイロードの判別子です。empty は中身なし、text はテキストあり。処理の成否は表しません。それは HTTP ステータスコードの仕事です。",
       "b.ov.loops": "クライアントは独立した 2 本のループを回します。1 本は /brain-to-human をロングポーリングして前書きと連続音声ストリームを読み、返答が終わるまで待ちます。もう 1 本は区間検出で切り出した発話を順番どおりに 1 件ずつ /human-to-brain へ送ります。",
-      "b.ov.framed": "前書き + 連続ストリーム：[u32 テキスト長][テキスト][flags]、その後に Ogg Opus 音声",
+      "b.ov.framed": "前書き + 連続ストリーム：<code>[u32 テキスト長][テキスト][flags]</code>、その後に Ogg Opus 音声",
 
       "b.auth.title": "認証",
       "b.auth.body": "両方のエンドポイントで Bearer トークンを受け付けます：",
