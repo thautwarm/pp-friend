@@ -55,9 +55,10 @@ Authorization: Bearer <token>
 原方案是 `/human-to-brain` 走 multipart、`/brain-to-human` 按顶层
 `Content-Type` 分派 JSON 或 multipart。
 
-**服务端最终给的规范是 MessagePack**，没有 multipart、没有 boundary、
-没有 Content-Type 分派。请求是单个 map；`/brain-to-human` 的响应是
-**二进制前导 + 一条连续 Ogg Opus 流**。
+**服务端最终给的规范是 MessagePack**，没有 multipart、没有 boundary。
+客户端使用的两个端点只收 MessagePack，`Content-Type` 不参与判定；
+未使用的 agent 那对同时收 JSON，响应跟随请求编码。请求是单个 map；
+`/brain-to-human` 的响应是**二进制前导 + 一条连续 Ogg Opus 流**。
 
 ```
 /human-to-brain   req  { brain_id: str, audio: bin }             // Ogg Opus 16k

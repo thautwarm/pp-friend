@@ -145,8 +145,8 @@ window.PP_I18N = (() => {
       "b.auth.i3": "401 是配置错误，不要当网络问题无限重试。提示 token 无效，停掉轮询。",
 
       "b.enc.title": "载荷编码",
-      "b.enc.body": "请求是单个裸的 MessagePack map；/brain-to-human 的响应是二进制前导加一条连续 Ogg Opus 流。不是 JSON，也不是 multipart。音频是原始字节：不是 base64，不是字符串，二进制原样进出。",
-      "b.enc.ct": "Content-Type / Accept 用 application/msgpack。规范没写明这个取值，客户端把它收在一个常量里，改一处即可。",
+      "b.enc.body": "带音频的请求只能是 MessagePack：结构化字段和 bin 装在同一个 body 里，不用 multipart，也不用 base64。客户端使用的 /human-to-brain 和 /brain-to-human 都只收 MessagePack；未使用的 agent 那对（/agent-to-brain、/brain-to-agent）JSON 和 MessagePack 都收，响应跟着请求的编码走。/brain-to-human 的响应是二进制前导加一条连续 Ogg Opus 流，不是 MessagePack map。",
+      "b.enc.ct": "人类那对端点只按 MessagePack 解析，Content-Type 不参与判定；客户端统一发 application/msgpack。agent 那对是 application/json 走 JSON、其余走 MessagePack，响应沿用同一编码。",
       "b.down.frame": "前导是 [4 字节 u32 大端文本长度][UTF-8 文本][1 字节 flags]，长度只算文本。前导可能跨多个网络分块。",
       "b.down.truncated": "文本长度超过客户端上限是协议错误；body 在前导中间结束是截断，客户端立刻重发。前导之后的字节全部属于 Ogg 流。",
       "b.down.warn": "不要把整个响应当 UTF-8 解，前导之后是二进制音频。按固定格式切出前导，剩下的原样喂解码器。",
@@ -418,8 +418,8 @@ window.PP_I18N = (() => {
       "b.auth.i3": "A 401 is a configuration error. Do not retry it like a network problem: report an invalid token and stop polling.",
 
       "b.enc.title": "Payload encoding",
-      "b.enc.body": "A request is one bare MessagePack map; the /brain-to-human response is a binary prelude followed by one continuous Ogg Opus stream. Not JSON, not multipart. Audio is raw bytes: not base64, not a string; bytes go in and out untouched.",
-      "b.enc.ct": "Use application/msgpack for Content-Type / Accept. The spec does not pin down this value; the client keeps it in a single constant so it can be changed in one place.",
+      "b.enc.body": "Requests that carry audio must be MessagePack: structured fields and a bin in one body, with no multipart and no base64. The two endpoints the client uses, /human-to-brain and /brain-to-human, accept MessagePack only. The unused agent pair (/agent-to-brain, /brain-to-agent) accepts both JSON and MessagePack, and replies in the request's encoding. The /brain-to-human response is a binary prelude followed by a continuous Ogg Opus stream, not a MessagePack map.",
+      "b.enc.ct": "The human pair is parsed as MessagePack only; Content-Type is not consulted. The client always sends application/msgpack. For the agent pair, application/json selects JSON and anything else selects MessagePack; the response uses the same encoding.",
       "b.down.frame": "The prelude is [4-byte big-endian u32 text length][UTF-8 text][1-byte flags]. The length counts only the text. The prelude may span network chunks.",
       "b.down.truncated": "A text length above the client limit is a protocol error; a body that ends mid-prelude is truncation, and the client re-requests immediately. Every byte after the prelude belongs to the Ogg stream.",
       "b.down.warn": "Do not decode the whole response as UTF-8; binary audio follows the prelude. Cut out the fixed prelude, then feed the rest to the decoder verbatim.",
@@ -691,8 +691,8 @@ window.PP_I18N = (() => {
       "b.auth.i3": "401 は設定ミスです。ネットワーク障害のようにリトライを続けず、トークンが無効であることを表示してポーリングを止めてください。",
 
       "b.enc.title": "ペイロード符号化",
-      "b.enc.body": "リクエストは裸の MessagePack map 1 つ。一方 /brain-to-human のレスポンスは、バイナリの前書きに連続した Ogg Opus ストリームが続きます。JSON でも multipart でもありません。音声は生バイト列です。base64 でも文字列でもなく、バイト列がそのまま行き来します。",
-      "b.enc.ct": "Content-Type / Accept には application/msgpack を使います。仕様ではこの値が明記されていないため、クライアントは 1 か所の定数にまとめています。",
+      "b.enc.body": "音声を含むリクエストは MessagePack のみです。構造化フィールドと bin を 1 つの body にまとめ、multipart も base64 も使いません。クライアントが使う /human-to-brain と /brain-to-human は MessagePack のみを受け付けます。未使用の agent 系（/agent-to-brain、/brain-to-agent）は JSON と MessagePack の両方を受け付け、レスポンスはリクエストと同じ符号化になります。/brain-to-human のレスポンスはバイナリの前書きに連続した Ogg Opus ストリームが続くもので、MessagePack map ではありません。",
+      "b.enc.ct": "人間側の 2 端点は MessagePack としてのみ解析され、Content-Type は判定に使いません。クライアントは常に application/msgpack を送ります。agent 側は application/json なら JSON、それ以外は MessagePack で、レスポンスも同じ符号化です。",
       "b.down.frame": "前書きは [4 バイトの u32 ビッグエンディアン テキスト長][UTF-8 テキスト][1 バイト flags]。長さはテキストのみです。前書きは複数のネットワークチャンクにまたがることがあります。",
       "b.down.truncated": "テキスト長がクライアントの上限を超えたらプロトコルエラー。body が前書きの途中で終わったら切り詰めで、クライアントは即座に再リクエストします。前書き以降のバイトはすべて Ogg ストリームです。",
       "b.down.warn": "レスポンス全体を UTF-8 としてデコードしないでください。前書きの後ろはバイナリの音声です。固定形式で前書きを切り出し、残りをそのままデコーダーへ渡します。",

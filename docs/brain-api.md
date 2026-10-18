@@ -159,17 +159,25 @@ AI 说话时设置**，见 §2.3。会话开始、切档案、结束对话都不
 
 ---
 
-## 3. 载荷编码 —— MessagePack
+## 3. 载荷编码
 
-**不是 JSON，也不是 multipart。** 请求是单个裸的 MessagePack map；
-`/brain-to-human` 的响应是「二进制前导 + 原始 Ogg 流」（§3.1），
-不是 MessagePack map。
+**带音频的请求只能是 MessagePack**：结构化字段和 bin 装在同一个 body 里，
+不用 multipart，也不用 base64。**不是所有端点都只收 MessagePack**：
 
-- `Content-Type` / `Accept` 用 `application/msgpack`
-  （服务端规范没写明；有些实现用 `application/x-msgpack`。
-  客户端把这个值收在 `BrainClient.msgpackContentType` 一个常量里，改一处即可）
-- 音频是 MessagePack 的 **bin** 类型，不是 base64、不是字符串
-- 二进制原样进出，不经过任何文本编码
+| 端点 | 请求编码 | 响应编码 |
+|---|---|---|
+| `/human-to-brain` | 仅 MessagePack | MessagePack |
+| `/brain-to-human` | 仅 MessagePack | 二进制前导 + Ogg 流（§3.1） |
+| `/agent-to-brain` | MessagePack / JSON | 同请求编码 |
+| `/brain-to-agent` | MessagePack / JSON | 同请求编码 |
+
+- 人类那对端点**只按 MessagePack 解析，`Content-Type` 不参与判定**。
+  客户端统一发 `application/msgpack`（收在 `BrainClient.msgpackContentType`
+  一个常量里，改一处即可）。
+- agent 那对：`Content-Type: application/json` 走 JSON，其余（含缺省）
+  按 MessagePack 解析；响应沿用请求的编码。客户端**没有使用**这一对。
+- 音频是 MessagePack 的 **bin** 类型，不是 base64、不是字符串。
+- 二进制原样进出，不经过任何文本编码。
 
 > ⚠️ 不要试图把整个响应当 UTF-8 解 —— 前导之后是二进制音频。
 > 前导按固定格式切出来，剩下多少字节就原样喂给 Ogg 解码器。
