@@ -170,10 +170,7 @@ class AssistantConfig {
 
     var focused = focusedProfileId;
     if (focused == id) {
-      focused = next.firstWhere(
-        (p) => p.enabled,
-        orElse: () => next.first,
-      ).id;
+      focused = next.firstWhere((p) => p.enabled, orElse: () => next.first).id;
     }
     return copyWith(profiles: next, focusedProfileId: focused);
   }
@@ -278,22 +275,22 @@ class AssistantConfig {
   /// 万一回退到旧版 APK，旧代码读 `json['brain']` 拿到的还是能用的
   /// baseUrl / brainId / token，不会静默清空。
   Map<String, dynamic> toJson() => {
-        'brain': brain.toJson(),
-        'profiles': profiles.map((p) => p.toJson()).toList(),
-        'focusedProfileId': focusedProfileId,
-        'vadThreshold': vadThreshold,
-        'vadMinSilenceMs': vadMinSilenceMs,
-        'vadSpeechPadMs': vadSpeechPadMs,
-        'vadMinSpeechMs': vadMinSpeechMs,
-        'vadMaxSpeechS': vadMaxSpeechS,
-        'vadRingCapacityMs': vadRingCapacityMs,
-        'bargeIn': bargeIn,
-        'volumeKeyClearsQueue': volumeKeyClearsQueue,
-        'pvadEnabled': pvadEnabled,
-        'pvadThreshold': pvadThreshold,
-        'pvadMinTargetRatio': pvadMinTargetRatio,
-        'pvadMinCosine': pvadMinCosine,
-      };
+    'brain': brain.toJson(),
+    'profiles': profiles.map((p) => p.toJson()).toList(),
+    'focusedProfileId': focusedProfileId,
+    'vadThreshold': vadThreshold,
+    'vadMinSilenceMs': vadMinSilenceMs,
+    'vadSpeechPadMs': vadSpeechPadMs,
+    'vadMinSpeechMs': vadMinSpeechMs,
+    'vadMaxSpeechS': vadMaxSpeechS,
+    'vadRingCapacityMs': vadRingCapacityMs,
+    'bargeIn': bargeIn,
+    'volumeKeyClearsQueue': volumeKeyClearsQueue,
+    'pvadEnabled': pvadEnabled,
+    'pvadThreshold': pvadThreshold,
+    'pvadMinTargetRatio': pvadMinTargetRatio,
+    'pvadMinCosine': pvadMinCosine,
+  };
 
   /// 老 JSON 里没有 `profiles` / `focusedProfileId`，靠这里补出来；
   /// 换 key 反而会把用户已经填好的 baseUrl / brainId / token 静默清空。
@@ -305,7 +302,9 @@ class AssistantConfig {
         if (item is! Map) continue;
         final profile = Profile.fromJson(item.cast<String, dynamic>());
         // id 非法或者重复的整项丢掉。留着重复 id 会让两个档案抢同一份历史。
-        if (profile == null || profiles.any((p) => p.id == profile.id)) continue;
+        if (profile == null || profiles.any((p) => p.id == profile.id)) {
+          continue;
+        }
         profiles.add(profile);
       }
     }
@@ -315,17 +314,20 @@ class AssistantConfig {
       final legacy = BrainConfig.fromJson(
         (json['brain'] as Map?)?.cast<String, dynamic>() ?? const {},
       );
-      profiles.add(Profile(
-        id: defaultProfileId,
-        // 名字取 brainId，用户进去就能看到一个具体的名字而不是空白。
-        // 但**没填名字**时才取，填了就跟着 brainId 走（displayName 的回退）。
-        name: legacy.brainId.trim(),
-        brain: legacy,
-      ));
+      profiles.add(
+        Profile(
+          id: defaultProfileId,
+          // 名字取 brainId，用户进去就能看到一个具体的名字而不是空白。
+          // 但**没填名字**时才取，填了就跟着 brainId 走（displayName 的回退）。
+          name: legacy.brainId.trim(),
+          brain: legacy,
+        ),
+      );
     }
 
     final rawFocused = json['focusedProfileId'];
-    final focused = rawFocused is String && profiles.any((p) => p.id == rawFocused)
+    final focused =
+        rawFocused is String && profiles.any((p) => p.id == rawFocused)
         ? rawFocused
         : profiles.first.id;
 
@@ -334,7 +336,8 @@ class AssistantConfig {
       focusedProfileId: focused,
       vadThreshold: (json['vadThreshold'] as num?)?.toDouble() ?? 0.5,
       // 旧版本只有一个 vadSilenceMs，读它作为回退，别让用户调过的值丢回默认。
-      vadMinSilenceMs: (json['vadMinSilenceMs'] as num?)?.toInt() ??
+      vadMinSilenceMs:
+          (json['vadMinSilenceMs'] as num?)?.toInt() ??
           (json['vadSilenceMs'] as num?)?.toInt() ??
           1000,
       vadSpeechPadMs: (json['vadSpeechPadMs'] as num?)?.toInt() ?? 200,
@@ -344,10 +347,13 @@ class AssistantConfig {
       bargeIn: json['bargeIn'] as bool? ?? false,
       // 老配置里没有这个键 —— 缺省当作开，行为跟升级前一致。
       // 类型不对也当缺省，不让一个字段把整份配置带崩（那条教训在 Profile 上踩过）。
-      volumeKeyClearsQueue:
-          json['volumeKeyClearsQueue'] is bool ? json['volumeKeyClearsQueue'] as bool : true,
+      volumeKeyClearsQueue: json['volumeKeyClearsQueue'] is bool
+          ? json['volumeKeyClearsQueue'] as bool
+          : true,
       // 老配置里没有这几个键 —— 缺省就是"开，但没声纹时不生效"。
-      pvadEnabled: json['pvadEnabled'] is bool ? json['pvadEnabled'] as bool : true,
+      pvadEnabled: json['pvadEnabled'] is bool
+          ? json['pvadEnabled'] as bool
+          : true,
       pvadThreshold: (json['pvadThreshold'] as num?)?.toDouble() ?? 0.5,
       pvadMinTargetRatio:
           (json['pvadMinTargetRatio'] as num?)?.toDouble() ?? 0.5,

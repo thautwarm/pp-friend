@@ -560,4 +560,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get orbEnd => '结束对话';
+
+  @override
+  String get jumpToBottom => '回到底部';
 }

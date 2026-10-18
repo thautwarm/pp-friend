@@ -49,6 +49,15 @@ class FakeVoiceEngine implements VoiceEngine {
   Uint8List decodedPcm = Uint8List(0);
   int decodedRate = 48000;
 
+  /// 调过几次 [decodeAudio]。
+  int decodeCalls = 0;
+
+  /// 从这里开始（1 起算）的第二次解码会挂住，直到测试放行。
+  ///
+  /// 用来制造"这一块已经入站、但还没解码/推进原生队列"的中间态。
+  int decodeGateAfter = 0;
+  Completer<void>? decodeGate;
+
   /// 本机有没有 Opus 编码器。默认**没有** —— 那是最省事的一条路：
   /// 上行到此为止，不会真的去打网络。
   bool opusUpstream = false;
@@ -106,11 +115,16 @@ class FakeVoiceEngine implements VoiceEngine {
   /// 紧接着又来一条"就必须把这个状态按在手里。
   Completer<void>? pushGate;
 
+  /// 前 [pushGateAfter] 次推送正常返回，从下一次开始挂住。
+  ///
+  /// 用来制造"前面几块已经推进队列、当前这块卡在推送里"的中间态。
+  int pushGateAfter = 0;
+
   @override
   Future<void> pushPlayback(Uint8List pcm16le, {required int epoch}) async {
     playbackPushes++;
     final gate = pushGate;
-    if (gate != null) await gate.future;
+    if (gate != null && playbackPushes > pushGateAfter) await gate.future;
   }
 
   @override
@@ -124,8 +138,9 @@ class FakeVoiceEngine implements VoiceEngine {
   }
 
   @override
-  Future<DebugAudioProfile> applyDebugProfile(DebugAudioProfile profile) async =>
-      profile;
+  Future<DebugAudioProfile> applyDebugProfile(
+    DebugAudioProfile profile,
+  ) async => profile;
 
   @override
   Future<DebugAudioProfile> currentDebugProfile() async =>
@@ -145,8 +160,50 @@ class FakeVoiceEngine implements VoiceEngine {
   }
 
   @override
-  Future<DecodedAudio> decodeAudio(Uint8List bytes) async =>
-      DecodedAudio(pcm16le: decodedPcm, sampleRate: decodedRate, channels: 1);
+  Future<DecodedAudio> decodeAudio(Uint8List bytes) async {
+    decodeCalls++;
+    final gate = decodeGate;
+    if (gate != null && decodeCalls > decodeGateAfter) await gate.future;
+    return DecodedAudio(
+      pcm16le: decodedPcm,
+      sampleRate: decodedRate,
+      channels: 1,
+    );
+  }
+
+  /// 一条回复的连续音频流里，是否已经吐过 PCM。
+  ///
+  /// 真的流式解码器可能分好几次才吐完；测试只关心"这条有没有声音"，
+  /// 所以第一条 feed 就吐完整段 [decodedPcm]，后面再 feed 返回 null。
+  bool _fedCurrentStream = false;
+
+  @override
+  Future<DecodedAudio?> feedOggStream(Uint8List bytes) async {
+    if (_fedCurrentStream || decodedPcm.isEmpty) {
+      decodeCalls++;
+      return null;
+    }
+    decodeCalls++;
+    final gate = decodeGate;
+    if (gate != null && decodeCalls > decodeGateAfter) await gate.future;
+    _fedCurrentStream = true;
+    return DecodedAudio(
+      pcm16le: decodedPcm,
+      sampleRate: decodedRate,
+      channels: 1,
+    );
+  }
+
+  @override
+  Future<DecodedAudio?> finishOggStream() async {
+    _fedCurrentStream = false;
+    return null;
+  }
+
+  @override
+  Future<void> resetOggStream() async {
+    _fedCurrentStream = false;
+  }
 
   @override
   Future<bool> opusEncoderAvailable() async => opusUpstream;

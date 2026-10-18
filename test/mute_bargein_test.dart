@@ -14,6 +14,7 @@ import 'package:pp_friend/src/conversation/conversation_controller.dart';
 import 'package:pp_friend/src/conversation/message.dart';
 
 import 'support/config_fakes.dart';
+import 'support/framed_brain.dart';
 import 'support/voice_fakes.dart';
 
 /// 48kHz 下 20ms 一帧 = 1920 字节。闭麦时长就靠帧数堆出来。
@@ -114,7 +115,12 @@ void main() {
       final engine = FakeVoiceEngine()..opusUpstream = true;
       final segmenter = FakeSegmenter();
       final captured = <List<int>>[];
-      final h = await _start(engine, segmenter, bargeIn: true, onUpload: captured.add);
+      final h = await _start(
+        engine,
+        segmenter,
+        bargeIn: true,
+        onUpload: captured.add,
+      );
       addTearDown(() => h.dispose());
 
       // 播放测试音 = 稳定的"AI 正在出声"，不用真的走 brain
@@ -134,7 +140,8 @@ void main() {
       await pumpEventQueue();
 
       expect(captured, hasLength(1));
-      final body = msgpack.deserialize(Uint8List.fromList(captured.single)) as Map;
+      final body =
+          msgpack.deserialize(Uint8List.fromList(captured.single)) as Map;
       expect(body['heard_ms'], 4200);
     });
 
@@ -167,7 +174,7 @@ void main() {
 
     test('打断后，把"没听到的那几句文字"也带给下一句', () async {
       final engine = FakeVoiceEngine()..opusUpstream = true;
-      engine.decodedPcm = Uint8List(96000);
+      engine.decodedPcm = Uint8List(288000); // 整条 3 秒
       final segmenter = FakeSegmenter();
       final captured = <List<int>>[];
       final h = await _startPlayingReply(
@@ -191,12 +198,15 @@ void main() {
       await pumpEventQueue();
 
       expect(captured, hasLength(1));
-      final body = msgpack.deserialize(Uint8List.fromList(captured.single)) as Map;
+      final body =
+          msgpack.deserialize(Uint8List.fromList(captured.single)) as Map;
       expect(body['heard_ms'], 1500);
       expect(
         body['unheard_text'],
-        '第二句。第三句。',
-        reason: 'brain 要的是文字，不是毫秒 —— 它自己的对齐不用再做一遍',
+        '第三句。',
+        reason:
+            '第一块整块听完；第二块听到一半，按比例往后 snap 到句号，'
+            '算整句听完；第三块还没听到',
       );
     });
 
@@ -210,7 +220,7 @@ void main() {
         engine,
         segmenter,
         bargeIn: true,
-        withSpans: false,
+        perSentenceChunks: false,
         onUpload: captured.add,
       );
       addTearDown(() => h.dispose());
@@ -228,7 +238,8 @@ void main() {
       await h.controller.sendTestUtterance();
       await pumpEventQueue();
 
-      final body = msgpack.deserialize(Uint8List.fromList(captured.single)) as Map;
+      final body =
+          msgpack.deserialize(Uint8List.fromList(captured.single)) as Map;
       expect(
         body['unheard_text'],
         '第三句。',
@@ -236,11 +247,11 @@ void main() {
       );
     });
 
-    test('清空时，队列里还没轮到播的那几条整条也算没听到', () async {
-      // 取的那条线不等播 —— 第一条还卡在推送里，第二条早就拿到手了，
-      // 就躺在队列里。
+    test('清空时，已经解码但还没推进队列的那一块整块算没听到', () async {
+      // 第一秒推下去之后，第二秒已经解码、但推送被按住 —— 还没响过。
       final engine = FakeVoiceEngine()..opusUpstream = true;
-      engine.decodedPcm = Uint8List(96000);
+      engine.decodedPcm = Uint8List(288000); // 整条 3 秒
+      engine.pushGateAfter = 1;
       engine.pushGate = Completer<void>();
       final segmenter = FakeSegmenter();
       final captured = <List<int>>[];
@@ -248,7 +259,6 @@ void main() {
         engine,
         segmenter,
         bargeIn: true,
-        replyCount: 2,
         onUpload: captured.add,
       );
       addTearDown(() => h.dispose());
@@ -256,41 +266,40 @@ void main() {
       for (var i = 0; i < 10; i++) {
         await pumpEventQueue();
       }
+      expect(engine.playbackPushes, 2, reason: '第二块已经解码，正卡在推送里');
 
-      expect(
-        h.controller.messages.where((m) => m.role == MessageRole.assistant).length,
-        2,
-        reason: '第二条已经到手，排在第一條后面等着播',
-      );
-      expect(engine.playbackPushes, 1, reason: '第一条还卡在推送里，第二条还没轮到');
-
-      // 第一条播到 1.5 秒时手动清空（不是打断，用户没说话）
-      engine.headMs = 1500;
+      // 第一块播到一半时手动清空（不是打断，用户没说话）
+      engine.headMs = 500;
       engine.backlogFrames = 48000;
       await h.controller.clearPlayback();
       await pumpEventQueue();
 
-      // 放行推送，让第一条的循环收尾，别挂着测试
+      // 放行推送，让在途的那块看到 epoch 已经变了、自己退出
       engine.pushGate!.complete();
       engine.pushGate = null;
 
       await h.controller.sendTestUtterance();
       await pumpEventQueue();
 
-      final body = msgpack.deserialize(Uint8List.fromList(captured.single)) as Map;
-      expect(body['heard_ms'], 1500);
+      final body =
+          msgpack.deserialize(Uint8List.fromList(captured.single)) as Map;
+      expect(body['heard_ms'], 500);
       expect(
         body['unheard_text'],
-        '第二句。第三句。第一句。第二句。第三句。',
-        reason: '第一条没听完的尾巴 ++ 队列里还没轮到播的整条正文',
+        '第二句。第三句。',
+        reason:
+            '只推下去一秒、听到一半；流还没结束，后面还有多少音频不知道，'
+            '按估出来的位置往前收到句首，整句都算没听到',
       );
     });
 
     test('你还在说的时候新到的回复先不播，整条算没听到', () async {
       final engine = FakeVoiceEngine()..opusUpstream = true;
-      engine.decodedPcm = Uint8List(96000);
-      // 把"正在播第一条"这个状态按住：不然假引擎里推送是瞬时的，
+      engine.decodedPcm = Uint8List(288000); // 整条 3 秒，分三块推
+      // 前两块正常推下去，第三块按住。这样第一条已经播到 1.5 秒附近、
+      // 第三块还没响，而 `_speaking` 还立着；不然假引擎里推送是瞬时的，
       // 还没等我们开口，第一条早播完、第二条也已经播上了。
+      engine.pushGateAfter = 2;
       engine.pushGate = Completer<void>();
       final segmenter = FakeSegmenter();
       final captured = <List<int>>[];
@@ -321,24 +330,29 @@ void main() {
       }
 
       expect(
-        h.controller.messages.where((m) => m.role == MessageRole.assistant).length,
+        h.controller.messages
+            .where((m) => m.role == MessageRole.assistant)
+            .length,
         2,
         reason: '第二条得真的到了，才谈得上"没播"',
       );
       expect(
         engine.playbackPushes,
-        1,
-        reason: '播下去也没人拦得住（没有第二次"开口"事件），只会盖在人家说话上面',
+        3,
+        reason:
+            '第二条一块都没推：播下去也没人拦得住（没有第二次"开口"事件），'
+            '只会盖在人家说话上面',
       );
 
       await h.controller.sendTestUtterance();
       await pumpEventQueue();
 
-      final body = msgpack.deserialize(Uint8List.fromList(captured.single)) as Map;
+      final body =
+          msgpack.deserialize(Uint8List.fromList(captured.single)) as Map;
       expect(
         body['unheard_text'],
-        '第二句。第三句。第一句。第二句。第三句。',
-        reason: '第一条的尾巴 ++ 第二条整段正文',
+        '第三句。第一句。第二句。第三句。',
+        reason: '第一条没听完的尾巴 ++ 第二条整段正文',
       );
     });
 
@@ -358,11 +372,7 @@ void main() {
       // 20ms 一帧，喂 5 帧 = 100ms：一声咳嗽的量级
       await _speak(engine, segmenter, frames: 5);
 
-      expect(
-        engine.flushCount,
-        0,
-        reason: '100ms 连"嗯"都算不上，不能凭这一下就把话掐了',
-      );
+      expect(engine.flushCount, 0, reason: '100ms 连"嗯"都算不上，不能凭这一下就把话掐了');
       expect(h.controller.speaking, isTrue, reason: 'AI 该继续说下去');
     });
 
@@ -387,9 +397,161 @@ void main() {
       await pumpEventQueue();
 
       expect(captured, hasLength(1));
-      final body = msgpack.deserialize(Uint8List.fromList(captured.single)) as Map;
+      final body =
+          msgpack.deserialize(Uint8List.fromList(captured.single)) as Map;
       // "没被打断"和"听到了 0ms"是两件事，所以这个键根本不该出现
       expect(body.containsKey('heard_ms'), isFalse);
+    });
+
+    test('首帧文本到了、音频还没到就被打断，整条算没听到', () async {
+      final engine = FakeVoiceEngine()..opusUpstream = true;
+      final segmenter = FakeSegmenter();
+      final captured = <List<int>>[];
+      const text = '第一句。第二句。';
+      final gate = Completer<void>();
+      final body = StreamController<List<int>>();
+      // 前导（文本）先到；音频被 gate 按住，模拟 TTS 启动那一秒的空档。
+      body.add(speechBody(text));
+      unawaited(() async {
+        await gate.future;
+        if (body.isClosed) return;
+        body.add(Uint8List.fromList(const [1, 2, 3, 4]));
+        unawaited(body.close());
+      }());
+
+      final h = await _startWithReply(
+        engine,
+        segmenter,
+        onUpload: captured.add,
+        reply: () => http.StreamedResponse(body.stream, 200),
+      );
+      addTearDown(() async {
+        gate.complete();
+        if (!body.isClosed) unawaited(body.close());
+        await h.dispose();
+      });
+
+      await pumpEventQueue();
+      expect(h.controller.messages.map((m) => m.text), contains(text));
+
+      await h.controller.clearPlayback();
+      await pumpEventQueue();
+
+      await h.controller.sendTestUtterance();
+      await pumpEventQueue();
+
+      final upload =
+          msgpack.deserialize(Uint8List.fromList(captured.single)) as Map;
+      expect(upload['unheard_text'], text, reason: '文字已经上屏、音频还没开始，用户一个字都没听到');
+      expect(upload['heard_ms'], 0);
+    });
+
+    test('body 正常结束 = 说完了：不补没听到的尾巴', () async {
+      final engine = FakeVoiceEngine()..opusUpstream = true;
+      engine.decodedPcm = Uint8List(96000); // 1 秒
+      final segmenter = FakeSegmenter();
+      final captured = <List<int>>[];
+      final body = StreamController<List<int>>();
+      body.add(speechBody('第一句。第二句。第三句。', ogg: const [1, 2, 3, 4]));
+      unawaited(body.close());
+
+      final h = await _startWithReply(
+        engine,
+        segmenter,
+        onUpload: captured.add,
+        reply: () => http.StreamedResponse(body.stream, 200),
+      );
+      addTearDown(() => h.dispose());
+
+      for (var i = 0; i < 6; i++) {
+        await pumpEventQueue();
+      }
+      expect(
+        h.controller.messages.map((m) => m.text),
+        contains('第一句。第二句。第三句。'),
+      );
+
+      await h.controller.sendTestUtterance();
+      await pumpEventQueue();
+
+      final upload =
+          msgpack.deserialize(Uint8List.fromList(captured.single)) as Map;
+      expect(
+        upload.containsKey('unheard_text'),
+        isFalse,
+        reason:
+            '没被打断、body 正常结束就是整条都播放过了；'
+            '新协议不再有 failed/consumed_sentences 可供对账',
+      );
+    });
+
+    test('按比例估出来正好落在句首，不能把这一句吞掉', () async {
+      final engine = FakeVoiceEngine()..opusUpstream = true;
+      engine.decodedPcm = Uint8List(288000); // 3 秒
+      final segmenter = FakeSegmenter();
+      final captured = <List<int>>[];
+      final h = await _startPlayingReply(
+        engine,
+        segmenter,
+        bargeIn: true,
+        perSentenceChunks: false,
+        onUpload: captured.add,
+      );
+      addTearDown(() => h.dispose());
+
+      await pumpEventQueue();
+      await pumpEventQueue();
+
+      // 3 秒播到 1 秒 = 三分之一；全文 12 字，正好是"第二句"的开头。
+      engine.headMs = 1000;
+      engine.backlogFrames = 48000;
+      await _speak(engine, segmenter);
+
+      await h.controller.sendTestUtterance();
+      await pumpEventQueue();
+
+      final upload =
+          msgpack.deserialize(Uint8List.fromList(captured.single)) as Map;
+      expect(
+        upload['unheard_text'],
+        '第二句。第三句。',
+        reason: '第二句一个采样都没响过，不能因为落在句首就当成整句听完',
+      );
+    });
+
+    test('播放测试音前先停掉正在播的回复，不混进同一个 AudioTrack', () async {
+      final engine = FakeVoiceEngine()..opusUpstream = true;
+      engine.decodedPcm = Uint8List(96000);
+      final segmenter = FakeSegmenter();
+      final captured = <List<int>>[];
+      final h = await _startPlayingReply(
+        engine,
+        segmenter,
+        onUpload: captured.add,
+      );
+      addTearDown(() => h.dispose());
+
+      await pumpEventQueue();
+      await pumpEventQueue();
+      final flushes = engine.flushCount;
+
+      engine.headMs = 500;
+      await h.controller.toggleTestTone();
+      await pumpEventQueue();
+
+      expect(engine.flushCount, greaterThan(flushes), reason: '测试音开始前必须清空 TTS');
+      expect(h.controller.testToneOn, isTrue);
+      expect(h.controller.speaking, isTrue);
+
+      await h.controller.sendTestUtterance();
+      await pumpEventQueue();
+
+      final upload =
+          msgpack.deserialize(Uint8List.fromList(captured.single)) as Map;
+      expect(upload['heard_ms'], 500);
+      // 音频已经全部推完（流结束），按"听到一半"往前 snap 到句号：
+      // 第二句只听到一半，算整句听完，只有第三句没听到。
+      expect(upload['unheard_text'], '第三句。');
     });
   });
 }
@@ -397,10 +559,10 @@ void main() {
 // ---------------------------------------------------------------------------
 
 SpeechSegment _segment() => SpeechSegment(
-      pcm16le: Uint8List(320),
-      sampleRate: fakeSileroRate,
-      durationSeconds: 0.3,
-    );
+  pcm16le: Uint8List(320),
+  sampleRate: fakeSileroRate,
+  durationSeconds: 0.3,
+);
 
 /// 模拟"用户连着说了 [frames] 帧"。
 ///
@@ -443,15 +605,18 @@ Future<_Harness> _start(
   void Function(List<int> body)? onUpload,
 }) async {
   final brain = BrainClient(
-    client: MockClient((request) async {
+    client: MockClient.streaming((request, bodyStream) async {
+      final requestBody = await bodyStream.toBytes();
       if (request.url.path.endsWith('/brain-to-human')) {
-        return http.Response('', 503);
+        return http.StreamedResponse(const Stream<List<int>>.empty(), 503);
       }
-      onUpload?.call(request.bodyBytes);
-      return http.Response.bytes(
-        msgpack.serialize(<String, dynamic>{'kind': 'text', 'text': '收到'}),
+      onUpload?.call(requestBody);
+      return http.StreamedResponse(
+        Stream<List<int>>.value(
+          msgpack.serialize(<String, dynamic>{'kind': 'text', 'text': '收到'}),
+        ),
         200,
-        headers: {'content-type': 'application/msgpack'},
+        headers: const {'content-type': 'application/msgpack'},
       );
     }),
   );
@@ -459,10 +624,62 @@ Future<_Harness> _start(
   final controller = ConversationController(
     engine: engine,
     brain: brain,
-    segmenterFactory: ({required int sampleRate, required AssistantConfig config}) async {
-      segmenter.sampleRates.add(sampleRate);
-      return segmenter;
-    },
+    segmenterFactory:
+        ({required int sampleRate, required AssistantConfig config}) async {
+          segmenter.sampleRates.add(sampleRate);
+          return segmenter;
+        },
+  );
+  await controller.updateConfig(
+    configWithBrain(
+      const BrainConfig(baseUrl: 'http://test.local:8000', brainId: '测试'),
+      bargeIn: bargeIn,
+    ),
+  );
+  await controller.start();
+  return _Harness(controller, engine);
+}
+
+/// 起一个 controller，`/brain-to-human` 的响应完全由测试给。
+///
+/// 第一条之后一律 503，避免轮询再插进来抢播放状态。
+Future<_Harness> _startWithReply(
+  FakeVoiceEngine engine,
+  FakeSegmenter segmenter, {
+  required http.StreamedResponse Function() reply,
+  bool bargeIn = false,
+  void Function(List<int> body)? onUpload,
+}) async {
+  var served = false;
+  final brain = BrainClient(
+    client: MockClient.streaming((request, bodyStream) async {
+      final requestBody = await bodyStream.toBytes();
+      if (!request.url.path.endsWith('/brain-to-human')) {
+        onUpload?.call(requestBody);
+        return http.StreamedResponse(
+          Stream<List<int>>.value(
+            msgpack.serialize(<String, dynamic>{'kind': 'text', 'text': '收到'}),
+          ),
+          200,
+          headers: const {'content-type': 'application/msgpack'},
+        );
+      }
+      if (served) {
+        return http.StreamedResponse(const Stream<List<int>>.empty(), 503);
+      }
+      served = true;
+      return reply();
+    }),
+  );
+
+  final controller = ConversationController(
+    engine: engine,
+    brain: brain,
+    segmenterFactory:
+        ({required int sampleRate, required AssistantConfig config}) async {
+          segmenter.sampleRates.add(sampleRate);
+          return segmenter;
+        },
   );
   await controller.updateConfig(
     configWithBrain(
@@ -476,46 +693,48 @@ Future<_Harness> _start(
 
 /// 起一个 controller，并让它收到**一条带音频的回复**。
 ///
-/// 和 [_start] 的区别：这里真的会走 `_playReplyAudio` 那条路，也就是
+/// 和 [_start] 的区别：这里真的会走分帧解码/播放那条路，也就是
 /// 真机上"声音在响但 `_speaking` 已经落回 false"的那个状态。
+///
+/// [perSentenceChunks] 为真时服务端按句分块（每块 1 秒），客户端能精确
+/// 知道哪几句已经消费；为假时整条只有一块（3 秒），客户端只能按比例估。
 Future<_Harness> _startPlayingReply(
   FakeVoiceEngine engine,
   FakeSegmenter segmenter, {
   bool bargeIn = false,
-  bool withSpans = true,
+  bool perSentenceChunks = true,
   int replyCount = 1,
   void Function(List<int> body)? onUpload,
 }) async {
   var served = 0;
+  const text = '第一句。第二句。第三句。';
+  final audio = Uint8List.fromList(const <int>[1, 2, 3, 4]);
+
   final brain = BrainClient(
-    client: MockClient((request) async {
+    client: MockClient.streaming((request, bodyStream) async {
+      final requestBody = await bodyStream.toBytes();
       if (!request.url.path.endsWith('/brain-to-human')) {
-        onUpload?.call(request.bodyBytes);
-        return http.Response.bytes(
-          msgpack.serialize(<String, dynamic>{'kind': 'text', 'text': '收到'}),
+        onUpload?.call(requestBody);
+        return http.StreamedResponse(
+          Stream<List<int>>.value(
+            msgpack.serialize(<String, dynamic>{'kind': 'text', 'text': '收到'}),
+          ),
           200,
-          headers: {'content-type': 'application/msgpack'},
+          headers: const {'content-type': 'application/msgpack'},
         );
       }
       // 喂几条就停，之后再问就是"暂时没话说"，别插进来抢播放状态
-      if (served >= replyCount) return http.Response('', 503);
+      if (served >= replyCount) {
+        return http.StreamedResponse(const Stream<List<int>>.empty(), 503);
+      }
       served++;
-      return http.Response.bytes(
-        msgpack.serialize(<String, dynamic>{
-          'kind': 'text',
-          'text': '第一句。第二句。第三句。',
-          'audio': Uint8List.fromList(const <int>[1, 2, 3, 4]),
-          // 按句的时间账：三句各 1 秒。客户端靠它把"播到第几毫秒"
-          // 翻成"哪几句没听到"。
-          if (withSpans)
-            'spans': [
-              {'text': '第一句。', 'ms': 1000},
-              {'text': '第二句。', 'ms': 1000},
-              {'text': '第三句。', 'ms': 1000},
-            ],
-        }),
+
+      // 新协议只有一条连续音频流；`perSentenceChunks` 已经没有意义，
+      // 保留参数只是为了不改所有调用点。真正解出多少 PCM 由假引擎决定。
+      return http.StreamedResponse(
+        Stream<List<int>>.value(speechBody(text, ogg: audio)),
         200,
-        headers: {'content-type': 'application/msgpack'},
+        headers: const {'content-type': 'application/octet-stream'},
       );
     }),
   );
@@ -523,10 +742,11 @@ Future<_Harness> _startPlayingReply(
   final controller = ConversationController(
     engine: engine,
     brain: brain,
-    segmenterFactory: ({required int sampleRate, required AssistantConfig config}) async {
-      segmenter.sampleRates.add(sampleRate);
-      return segmenter;
-    },
+    segmenterFactory:
+        ({required int sampleRate, required AssistantConfig config}) async {
+          segmenter.sampleRates.add(sampleRate);
+          return segmenter;
+        },
   );
   await controller.updateConfig(
     configWithBrain(

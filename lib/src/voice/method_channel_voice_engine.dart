@@ -10,9 +10,15 @@ import 'voice_engine.dart';
 /// 采集是高频二进制，电平是中频遥测，事件是低频离散。
 class MethodChannelVoiceEngine implements VoiceEngine {
   static const MethodChannel _method = MethodChannel('pp_friend/voice_engine');
-  static const EventChannel _micChannel = EventChannel('pp_friend/voice_engine/mic');
-  static const EventChannel _levelChannel = EventChannel('pp_friend/voice_engine/levels');
-  static const EventChannel _eventChannel = EventChannel('pp_friend/voice_engine/events');
+  static const EventChannel _micChannel = EventChannel(
+    'pp_friend/voice_engine/mic',
+  );
+  static const EventChannel _levelChannel = EventChannel(
+    'pp_friend/voice_engine/levels',
+  );
+  static const EventChannel _eventChannel = EventChannel(
+    'pp_friend/voice_engine/events',
+  );
 
   Stream<Uint8List>? _micStream;
   Stream<AudioLevels>? _levelStream;
@@ -36,12 +42,11 @@ class MethodChannelVoiceEngine implements VoiceEngine {
       });
 
   @override
-  Stream<EngineEvent> get events =>
-      _eventStream ??= _eventChannel
-          .receiveBroadcastStream()
-          .map((event) => _parseEvent((event as Map).cast<String, dynamic>()))
-          .where((event) => event != null)
-          .cast<EngineEvent>();
+  Stream<EngineEvent> get events => _eventStream ??= _eventChannel
+      .receiveBroadcastStream()
+      .map((event) => _parseEvent((event as Map).cast<String, dynamic>()))
+      .where((event) => event != null)
+      .cast<EngineEvent>();
 
   EngineEvent? _parseEvent(Map<String, dynamic> map) {
     switch (map['type'] as String?) {
@@ -51,7 +56,9 @@ class MethodChannelVoiceEngine implements VoiceEngine {
           canDuck: map['canDuck'] as bool? ?? false,
         );
       case 'interruptionEnded':
-        return InterruptionEnded(shouldResume: map['shouldResume'] as bool? ?? true);
+        return InterruptionEnded(
+          shouldResume: map['shouldResume'] as bool? ?? true,
+        );
       case 'micSilentlyDead':
         return MicSilentlyDead(map['reason'] as String? ?? '未知原因');
       case 'engineFailure':
@@ -117,15 +124,15 @@ class MethodChannelVoiceEngine implements VoiceEngine {
       await _method.invokeMethod<int>('playbackHeadMs') ?? 0;
 
   @override
-  Future<void> pushPlayback(Uint8List pcm16le, {required int epoch}) =>
-      _method.invokeMethod<void>('pushPlayback', {
-        'pcm': pcm16le,
-        'epoch': epoch,
-      });
+  Future<void> pushPlayback(Uint8List pcm16le, {required int epoch}) => _method
+      .invokeMethod<void>('pushPlayback', {'pcm': pcm16le, 'epoch': epoch});
 
   @override
   Future<int> flushPlayback({required int newEpoch}) async =>
-      await _method.invokeMethod<int>('flushPlayback', {'newEpoch': newEpoch}) ?? 0;
+      await _method.invokeMethod<int>('flushPlayback', {
+        'newEpoch': newEpoch,
+      }) ??
+      0;
 
   // ------------------------------------------------------------ 调试配置
 
@@ -162,13 +169,61 @@ class MethodChannelVoiceEngine implements VoiceEngine {
 
       final pcm = result['pcm'];
       return DecodedAudio(
-        pcm16le: pcm is Uint8List ? pcm : Uint8List.fromList((pcm as List).cast<int>()),
+        pcm16le: pcm is Uint8List
+            ? pcm
+            : Uint8List.fromList((pcm as List).cast<int>()),
         sampleRate: (result['sampleRate'] as num).toInt(),
         channels: (result['channels'] as num).toInt(),
       );
     } on PlatformException catch (e) {
       throw StateError('解码音频失败：${e.message ?? e.code}');
     }
+  }
+
+  @override
+  Future<DecodedAudio?> feedOggStream(Uint8List bytes) async {
+    try {
+      final result = await _method.invokeMethod<Map<dynamic, dynamic>>(
+        'feedOggStream',
+        {'bytes': bytes},
+      );
+      return _decoded(result);
+    } on PlatformException catch (e) {
+      throw StateError('流式解码音频失败：${e.message ?? e.code}');
+    }
+  }
+
+  @override
+  Future<DecodedAudio?> finishOggStream() async {
+    try {
+      final result = await _method.invokeMethod<Map<dynamic, dynamic>>(
+        'finishOggStream',
+      );
+      return _decoded(result);
+    } on PlatformException catch (e) {
+      throw StateError('收尾解码音频失败：${e.message ?? e.code}');
+    }
+  }
+
+  @override
+  Future<void> resetOggStream() async {
+    await _method.invokeMethod<void>('resetOggStream');
+  }
+
+  static DecodedAudio? _decoded(Map<dynamic, dynamic>? result) {
+    if (result == null) return null;
+    final pcm = result['pcm'];
+    final bytes = pcm is Uint8List
+        ? pcm
+        : pcm is List
+        ? Uint8List.fromList(pcm.cast<int>())
+        : Uint8List(0);
+    if (bytes.isEmpty) return null;
+    return DecodedAudio(
+      pcm16le: bytes,
+      sampleRate: (result['sampleRate'] as num).toInt(),
+      channels: (result['channels'] as num).toInt(),
+    );
   }
 
   @override
@@ -182,10 +237,11 @@ class MethodChannelVoiceEngine implements VoiceEngine {
     int channels = 1,
   }) async {
     try {
-      final result = await _method.invokeMethod<Uint8List>(
-        'encodeOpus',
-        {'pcm': pcm16le, 'sampleRate': sampleRate, 'channels': channels},
-      );
+      final result = await _method.invokeMethod<Uint8List>('encodeOpus', {
+        'pcm': pcm16le,
+        'sampleRate': sampleRate,
+        'channels': channels,
+      });
       return result;
     } on PlatformException {
       // 编码失败由调用方明确报错，不再有 WAV 回落

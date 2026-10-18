@@ -43,7 +43,8 @@ class TestToneGenerator {
       final envelope = 0.55 + 0.45 * math.sin(2 * math.pi * 4.2 * t);
 
       // 基频 + 谐波
-      final wave = math.sin(2 * math.pi * fundamentalHz * t) +
+      final wave =
+          math.sin(2 * math.pi * fundamentalHz * t) +
           0.40 * math.sin(2 * math.pi * fundamentalHz * 2 * t) +
           0.20 * math.sin(2 * math.pi * fundamentalHz * 3 * t);
 

@@ -12,14 +12,13 @@ AssistantConfig configWithBrain(
   BrainConfig brain, {
   bool bargeIn = false,
   String? name,
-}) =>
-    AssistantConfig(
-      profiles: [
-        Profile(
-          id: AssistantConfig.defaultProfileId,
-          name: name ?? '',
-          brain: brain,
-        ),
-      ],
-      bargeIn: bargeIn,
-    );
+}) => AssistantConfig(
+  profiles: [
+    Profile(
+      id: AssistantConfig.defaultProfileId,
+      name: name ?? '',
+      brain: brain,
+    ),
+  ],
+  bargeIn: bargeIn,
+);

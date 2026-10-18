@@ -110,24 +110,23 @@ class Profile {
     String? avatarFile,
     bool clearAvatar = false,
     bool? enabled,
-  }) =>
-      Profile(
-        id: id,
-        name: name ?? this.name,
-        brain: brain ?? this.brain,
-        accentColor: accentColor ?? this.accentColor,
-        avatarFile: clearAvatar ? null : (avatarFile ?? this.avatarFile),
-        enabled: enabled ?? this.enabled,
-      );
+  }) => Profile(
+    id: id,
+    name: name ?? this.name,
+    brain: brain ?? this.brain,
+    accentColor: accentColor ?? this.accentColor,
+    avatarFile: clearAvatar ? null : (avatarFile ?? this.avatarFile),
+    enabled: enabled ?? this.enabled,
+  );
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'brain': brain.toJson(),
-        'accentColor': accentColor,
-        if (avatarFile != null) 'avatarFile': avatarFile,
-        'enabled': enabled,
-      };
+    'id': id,
+    'name': name,
+    'brain': brain.toJson(),
+    'accentColor': accentColor,
+    if (avatarFile != null) 'avatarFile': avatarFile,
+    'enabled': enabled,
+  };
 
   /// 解析一项。**数据不可用就返回 null**，由调用方跳过这一项。
   ///
@@ -149,7 +148,9 @@ class Profile {
         brain is Map ? brain.cast<String, dynamic>() : const {},
       ),
       accentColor: _int(json['accentColor'], defaultAccentColor),
-      avatarFile: json['avatarFile'] is String ? json['avatarFile'] as String : null,
+      avatarFile: json['avatarFile'] is String
+          ? json['avatarFile'] as String
+          : null,
       enabled: _bool(json['enabled'], true),
     );
   }

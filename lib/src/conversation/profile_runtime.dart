@@ -4,6 +4,7 @@ import 'dart:collection';
 import 'package:flutter/foundation.dart';
 
 import '../brain/brain_client.dart';
+import '../brain/voice_directives.dart';
 import '../config/profile.dart';
 import '../storage/message_store.dart';
 import 'message.dart';
@@ -65,9 +66,12 @@ class ProfileRuntime {
   /// 长轮询可以挂一百多秒，这期间用户完全可能切走。
   final bool Function() isFocused;
 
-  /// 把一条语音交给播放队列。只有聚焦的档案会走到这里。
-  final void Function(String text, Uint8List audio, List<BrainSpan> spans)
-      onReply;
+  /// 把一条回复的句柄交给控制器。只有聚焦的档案会走到这里。
+  ///
+  /// 第一帧已经由本类记进消息流；控制器只负责从 [start] 之后继续消费
+  /// [stream.events]，逐帧解码、推送，并在被打断时把流取消。
+  final Future<void> Function(BrainReplyStream stream, BrainReplyStart start)
+  onReply;
 
   /// 内存里最多留多少条。超了就从头裁掉 —— 盘上还在，往上翻能读回来。
   final int messageLimit;
@@ -101,8 +105,11 @@ class ProfileRuntime {
   String? error;
   bool authFailed = false;
 
-  Future<void>? _pollTask;
   bool _running = false;
+
+  /// 轮询代数。每次 start/stop 都自增，旧循环回来时据此知道自己已经作废，
+  /// 不会把新一轮的状态（`_running` / `polling`）又按回 false。
+  int _pollGeneration = 0;
 
   /// 循环正睡在退避里时，用它把人叫醒。见 [_backoff]。
   Completer<void>? _wake;
@@ -112,6 +119,30 @@ class ProfileRuntime {
 
   /// 收到多少条语音被丢掉了。用来把日志压成一条，而不是每条回复刷一行。
   int _skippedAudio = 0;
+
+  /// 正在读的这条 `/brain-to-human` 流。打断/停轮询时用它主动断开，
+  /// 让服务端立刻停止后续合成。
+  BrainReplyStream? _currentStream;
+
+  /// 用户打断时设下的水位（UTC epoch 毫秒）。
+  ///
+  /// 服务端把打断**之前**入队的消息跳过：不合成音频，一条消息一条
+  /// `skipped` 首帧。客户端把它们的文本显示出来，并记进没听到。
+  /// 收到下一条真回复后清掉。
+  ///
+  /// **只在用户打断时设置**（开口盖过 AI、通知栏停止说话、音量减键）。
+  /// 会话开始、切档案、结束对话都不设置 —— 停着的时候积压的消息
+  /// 必须原样送达，不能悄悄吞掉。
+  int? _skipBeforeMs;
+
+  /// 这次打断之后已经跳过了几条。只用来把日志压成一条。
+  int _skippedSinceInterrupt = 0;
+
+  /// 连续截断了几次。截断本身立刻重发，但坏服务端不能把循环打成忙等。
+  int _truncatedStreak = 0;
+
+  /// 因为打断而主动掐断了在途请求：下一次循环立刻重发，不记错误、不退避。
+  bool _retryNow = false;
 
   /// 网络失败的重试退避上限（毫秒）。
   static const int maxBackoffMs = 15000;
@@ -130,8 +161,27 @@ class ProfileRuntime {
   void appendUnheard(String? chunk) {
     final text = chunk?.trim();
     if (text == null || text.isEmpty) return;
-    pendingUnheardText =
-        pendingUnheardText == null ? text : '$pendingUnheardText$text';
+    pendingUnheardText = pendingUnheardText == null
+        ? text
+        : '$pendingUnheardText$text';
+  }
+
+  /// 用户打断了 AI 说话。记下此刻，让服务端跳过打断之前入队的消息。
+  ///
+  /// 三个触发源：开口盖过 AI（barge-in）、通知栏「停止说话」、
+  /// 前台的音量减键。**都算打断。** 打断之后新入队的回复照常送达。
+  void markInterrupted() {
+    _skipBeforeMs = DateTime.now().toUtc().millisecondsSinceEpoch;
+    _skippedSinceInterrupt = 0;
+
+    // 正在等前导的那次长轮询是**打断之前**发出去的，没有带这个水位：
+    // 服务端随时可能把打断前就排队的消息塞回来，而客户端会照单全收。
+    // 直接掐断这条请求，让循环带着新的 skip_before 立刻重发。
+    // 已经在播的流不走这里 —— 那条由 controller 的 _beginInterrupt 取消。
+    if (_currentStream == null && _running && brain.hasPendingRequests) {
+      _retryNow = true;
+      brain.abort();
+    }
   }
 
   /// 换了一份配置之后更新。
@@ -245,21 +295,38 @@ class ProfileRuntime {
     if (_running) return;
     _running = true;
     _skippedAudio = 0;
-    _pollTask = _pollLoop();
+    _truncatedStreak = 0;
+    // **不设 skip_before。** 停着的时候服务端压下来的消息必须原样送上来：
+    // 有文本也有音频，用户能看见、能听见。只有用户主动打断才该丢。
+    _skipBeforeMs = null;
+    _skippedSinceInterrupt = 0;
+    unawaited(_pollLoop(++_pollGeneration));
+  }
+
+  /// 取消当前在途的回复流。barge-in、清空、切档案、停轮询都走这里。
+  ///
+  /// **这不是网络错误。** 服务端看到连接断开会立刻停止后续合成，
+  /// 已经取走的这条不会重投。
+  Future<void> cancelCurrentReply() async {
+    final stream = _currentStream;
+    _currentStream = null;
+    await stream?.cancel();
   }
 
   Future<void> stopPolling() async {
     if (!_running) return;
     _running = false;
-    // 长轮询是阻塞请求，光翻标志位它要挂到超时才回来。
-    // abort 会关掉底层连接，让在途的请求立刻断掉。
+    // 作废当前这一轮。**不等它退出来**：它可能正卡在一次已经不可取消的
+    // 原生推送里（解码/推 AudioTrack），等下去会把结束对话、关档案、
+    // 保存配置全拖住。网络这一侧由 cancelCurrentReply + abort 立刻掐断，
+    // 剩下的只是本地收尾；旧循环回来后会看到代数变了，自己安静退出。
+    _pollGeneration++;
+    // 先取消当前流，再关 client。两步都会让在途请求立刻断掉；
+    // 顺序反了也没错，但先取消能把"客户端主动断"这个语义传清楚。
+    await cancelCurrentReply();
     brain.abort();
-    // 退避里的 `Future.delayed` 它打不断 —— 不叫醒的话，下面那个 await
-    // 就得等它睡完，最长 15 秒。结束对话、关档案、保存配置全卡在这上面。
+    // 退避里的 `Future.delayed` 它打不断 —— 叫醒它，让旧循环尽快走完。
     _wake?.complete();
-    final task = _pollTask;
-    _pollTask = null;
-    await task;
     polling = false;
     onChanged();
   }
@@ -286,54 +353,114 @@ class ProfileRuntime {
     brain.dispose();
   }
 
-  Future<void> _pollLoop() async {
+  Future<void> _pollLoop(int generation) async {
+    // 起跑之前就已经被 stop 掉了：别把 polling 又立起来。
+    if (generation != _pollGeneration) return;
     polling = true;
     onChanged();
 
     var backoffMs = 500;
 
     loop:
-    while (_running && isActive()) {
+    while (_running && isActive() && generation == _pollGeneration) {
+      BrainReplyStream? stream;
       try {
-        final response = await brain.brainToHuman(
+        stream = await brain.brainToHuman(
           baseUrl: profile.brain.baseUrl,
           brainId: profile.brain.brainId,
           token: profile.brain.token,
+          // 只在用户打断之后带；收到下一条真回复才清掉。
+          skipBefore: _skipBeforeMs,
         );
 
-        if (!_running || !isActive()) break;
+        if (!_running || !isActive() || generation != _pollGeneration) {
+          await stream.cancel();
+          break;
+        }
 
+        _currentStream = stream;
         backoffMs = 500;
         setError(null);
 
-        switch (response) {
-          case BrainEmpty():
-            // 立刻再发一次，不停不等
-            continue loop;
+        final first = stream.first;
 
-          case BrainReply(:final text, :final audio, :final spans):
-            // 文本永远进消息流，无论语音后面会不会被清掉
-            if (text.trim().isNotEmpty) {
-              await record(MessageRole.assistant, text);
+        if (first is BrainEmpty) {
+          final skipped = first.skippedText;
+          if (skipped != null && skipped.trim().isNotEmpty) {
+            // 打断之后服务端跳过了一条旧消息（没有合成音频）。
+            // 文本照样显示出来，并记进没听到 —— 用户说"文本不能漏"。
+            _skippedSinceInterrupt++;
+            if (_skippedSinceInterrupt == 1) {
+              onLog('打断后跳过旧消息：文本照常显示，并记进没听到');
             }
-            if (audio.isEmpty) {
-              onLog('/brain-to-human 只有文本，没有音频');
-            } else if (!_running || !isFocused()) {
-              // 收到语音的那一刻**现读**聚焦状态。缓存下来的话，
-              // 会出现"切走之后旧档案的声音还在响"。
-              //
-              // 只记第一条：后台档案可能连着来好几条，每条都写一行会
-              // 把这个 120 条的调试环刷没。
-              if (_skippedAudio++ == 0) {
-                onLog('$displayName 收到语音，但它没在聚焦，不播');
-              }
-            } else {
-              _skippedAudio = 0;
-              onReply(text, audio, spans);
-            }
+            await record(MessageRole.assistant, skipped);
+            appendUnheard(spokenText(skipped));
+          }
+          await stream.cancel();
+          continue loop;
         }
+
+        final start = first as BrainReplyStart;
+
+        // 真回复到了，打断水位结束（被跳过的消息已经全部送达）。
+        if (_skipBeforeMs != null) {
+          if (_skippedSinceInterrupt > 0) {
+            onLog('打断后一共跳过 $_skippedSinceInterrupt 条旧消息（文本已显示）');
+          }
+          _skipBeforeMs = null;
+          _skippedSinceInterrupt = 0;
+        }
+
+        // 拿到真回复就算从截断里恢复；不要求整条播放完。
+        _truncatedStreak = 0;
+
+        // 文本永远进消息流，无论音频后面会不会被清掉。
+        if (start.text.trim().isNotEmpty) {
+          await record(MessageRole.assistant, start.text);
+        }
+
+        if (!_running || !isActive() || generation != _pollGeneration) {
+          await stream.cancel();
+          break;
+        }
+
+        if (!isFocused()) {
+          // 收到第一帧的那一刻**现读**聚焦状态。缓存下来的话，
+          // 会出现"切走之后旧档案的声音还在响"。
+          //
+          // 只记第一条：后台档案可能连着来好几条，每条都写一行会
+          // 把这个 120 条的调试环刷没。
+          if (_skippedAudio++ == 0) {
+            onLog('$displayName 收到回复，但它没在聚焦，音频不播');
+          }
+          // 服务端看到断开就会停止后续合成。文字已经记下了，
+          // 音频本来就不要，没必要继续下载。
+          await stream.cancel();
+          continue loop;
+        }
+
+        _skippedAudio = 0;
+        await onReply(stream, start);
       } on BrainException catch (e) {
-        if (!_running || !isActive()) break;
+        if (!_running || !isActive() || generation != _pollGeneration) break;
+        if (_retryNow) {
+          _retryNow = false;
+          continue loop;
+        }
+
+        if (e.kind == BrainErrorKind.truncated) {
+          // 截断不是网络故障：已经取走的帧不重投，重新发一次请求
+          // 就能接着拿后面的内容。连续多次时稍微让一下，避免忙等。
+          _truncatedStreak++;
+          onLog(
+            '回复流被截断，立刻重新请求'
+            '${_truncatedStreak > 1 ? "（连续 $_truncatedStreak 次）" : ""}',
+          );
+          if (_truncatedStreak >= 3) {
+            await _backoff(200);
+          }
+          continue loop;
+        }
 
         setError(e.message);
         onLog(e.message);
@@ -349,10 +476,18 @@ class ProfileRuntime {
         await _backoff(backoffMs);
         backoffMs = (backoffMs * 2).clamp(500, maxBackoffMs);
       } catch (e) {
-        if (!_running || !isActive()) break;
+        if (!_running || !isActive() || generation != _pollGeneration) break;
+        if (_retryNow) {
+          // 我们为了带上新的 skip_before 主动掐的，不是故障。
+          _retryNow = false;
+          continue loop;
+        }
         onLog('/brain-to-human 异常：$e');
         await _backoff(backoffMs);
         backoffMs = (backoffMs * 2).clamp(500, maxBackoffMs);
+      } finally {
+        final current = _currentStream;
+        if (identical(current, stream)) _currentStream = null;
       }
     }
 
@@ -361,10 +496,16 @@ class ProfileRuntime {
     // 留着 true 的话就成了"循环已经死了，外面却以为它还在跑"——
     // 用户把 token 改对、保存，`_syncPolling` 见 running 为 true 直接跳过，
     // 这个档案就再也不会有任何回复了。
-    _running = false;
-    _pollTask = null;
-    polling = false;
-    onChanged();
+    //
+    // **只在代数没变时复位状态。** 旧循环可能在 stop 之后才从一次不可取消的
+    // 原生推送里回来；那时新循环可能已经起来了，不认识的旧人不能把
+    // `_running` 按回 false，否则新循环会变成"外面以为它在跑、其实已经
+    // 被自己人关了"。
+    if (generation == _pollGeneration) {
+      _running = false;
+      polling = false;
+      onChanged();
+    }
   }
 
   /// 记下（或者清掉）这个档案最近一次失败的原因。

@@ -31,7 +31,8 @@ void main() {
       // 走一遍真正的 JSON 编码，而不是直接塞 map ——
       // 类型在编码后可能变（int/double），序列化 bug 往往就藏在那里。
       final restored = AssistantConfig.fromJson(
-        (jsonDecode(jsonEncode(config.toJson())) as Map).cast<String, dynamic>(),
+        (jsonDecode(jsonEncode(config.toJson())) as Map)
+            .cast<String, dynamic>(),
       );
 
       expect(restored.brain.baseUrl, config.brain.baseUrl);

@@ -23,10 +23,7 @@ class QueuedUtterance {
 /// 队列有上限：如果上传一直追不上你说话的速度，继续排队只会让延迟
 /// 无限增长（而且排在前面的早就没意义了）。满了就丢最旧的。
 class UtteranceQueue {
-  UtteranceQueue({
-    required this.onSend,
-    this.maxPending = 8,
-  });
+  UtteranceQueue({required this.onSend, this.maxPending = 8});
 
   final Future<void> Function(QueuedUtterance utterance) onSend;
   final int maxPending;

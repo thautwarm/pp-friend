@@ -36,15 +36,15 @@ class ConversationMessage {
   static const int schemaVersion = 1;
 
   Map<String, dynamic> toJson() => {
-        'v': schemaVersion,
-        'n': seq,
-        // 单字符的 role，省体积。这是追加写的文件，键名会乘以几十万次。
-        'r': _roleCode[role] ?? 'n',
-        't': text,
-        // 存 UTC，读的时候再转本地。存本地时间的话，跨时区或者夏令时
-        // 切换之后，历史里的时间会集体偏移。
-        'a': at.toUtc().toIso8601String(),
-      };
+    'v': schemaVersion,
+    'n': seq,
+    // 单字符的 role，省体积。这是追加写的文件，键名会乘以几十万次。
+    'r': _roleCode[role] ?? 'n',
+    't': text,
+    // 存 UTC，读的时候再转本地。存本地时间的话，跨时区或者夏令时
+    // 切换之后，历史里的时间会集体偏移。
+    'a': at.toUtc().toIso8601String(),
+  };
 
   /// 解析一行。**数据不可用就返回 null**，让调用方跳过这一行继续读。
   ///
@@ -77,10 +77,10 @@ class ConversationMessage {
   ///
   /// 比丢弃整行好：文字还在，只是排版降级。丢弃的话用户会以为那段话没说过。
   static MessageRole _roleFromCode(Object? code) => switch (code) {
-        'u' => MessageRole.user,
-        'a' => MessageRole.assistant,
-        _ => MessageRole.note,
-      };
+    'u' => MessageRole.user,
+    'a' => MessageRole.assistant,
+    _ => MessageRole.note,
+  };
 }
 
 enum MessageRole {

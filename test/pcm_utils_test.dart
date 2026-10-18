@@ -41,11 +41,17 @@ void main() {
 
     test('相同采样率原样返回', () {
       final input = sine(sampleRate: 16000, frames: 320);
-      expect(identical(resamplePcm16(input, fromRate: 16000, toRate: 16000), input), isTrue);
+      expect(
+        identical(resamplePcm16(input, fromRate: 16000, toRate: 16000), input),
+        isTrue,
+      );
     });
 
     test('空输入不炸', () {
-      expect(resamplePcm16(Uint8List(0), fromRate: 24000, toRate: 16000).length, 0);
+      expect(
+        resamplePcm16(Uint8List(0), fromRate: 24000, toRate: 16000).length,
+        0,
+      );
     });
 
     test('幅度基本保持（不引入增益）', () {

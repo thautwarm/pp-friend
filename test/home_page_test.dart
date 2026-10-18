@@ -155,4 +155,37 @@ void main() {
           '而不是把当前视野挤走',
     );
   });
+
+  testWidgets('翻上去之后出现"回到底部"，点一下回到最新', (tester) async {
+    final store = MemoryMessageStore();
+    for (var i = 1; i <= 30; i++) {
+      await store.append('p_a', role: MessageRole.user, text: '第 $i 条');
+    }
+    final controller = await _boot(store);
+    addTearDown(controller.dispose);
+
+    await _pumpHome(tester, controller);
+
+    const button = ValueKey('jump-to-bottom');
+    expect(find.byKey(button), findsNothing, reason: '贴着底部时不该挡着');
+
+    // 往上翻（drag 正值 = 内容往下走 = 看更早的消息）
+    await tester.drag(find.byType(ListView), const Offset(0, 600));
+    await _settle(tester);
+
+    expect(find.byKey(button), findsOneWidget);
+    final position = _listPosition(tester);
+    expect(
+      position.maxScrollExtent - position.pixels,
+      greaterThan(120),
+      reason: '得真的离底部够远才显示',
+    );
+
+    await tester.tap(find.byKey(button));
+    await _settle(tester);
+
+    final after = _listPosition(tester);
+    expect(after.pixels, closeTo(after.maxScrollExtent, 1));
+    expect(find.byKey(button), findsNothing, reason: '回到最新之后按钮收起');
+  });
 }

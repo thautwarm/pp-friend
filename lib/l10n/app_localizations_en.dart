@@ -582,4 +582,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get orbEnd => 'End conversation';
+
+  @override
+  String get jumpToBottom => 'Jump to latest';
 }

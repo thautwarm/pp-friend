@@ -26,14 +26,13 @@ class AudioFormat {
       Duration(microseconds: framesPerChunk * 1000000 ~/ sampleRate);
 
   factory AudioFormat.fromMap(Map<dynamic, dynamic> map) => AudioFormat(
-        sampleRate: (map['sampleRate'] as num).toInt(),
-        channels: (map['channels'] as num).toInt(),
-        framesPerChunk: (map['framesPerChunk'] as num).toInt(),
-      );
+    sampleRate: (map['sampleRate'] as num).toInt(),
+    channels: (map['channels'] as num).toInt(),
+    framesPerChunk: (map['framesPerChunk'] as num).toInt(),
+  );
 
   @override
-  String toString() =>
-      '${sampleRate}Hz/${channels}ch/${framesPerChunk}frames';
+  String toString() => '${sampleRate}Hz/${channels}ch/${framesPerChunk}frames';
 }
 
 /// 双讲检测所需的两个电平。单位 dBFS，静默为 -120。
@@ -72,7 +71,13 @@ class DecodedAudio {
 // 调试用音频配置：对应文档里的实测矩阵，一次只动一个变量
 // ---------------------------------------------------------------------------
 
-enum CaptureSource { voiceCommunication, mic, voiceRecognition, camcorder, unprocessed }
+enum CaptureSource {
+  voiceCommunication,
+  mic,
+  voiceRecognition,
+  camcorder,
+  unprocessed,
+}
 
 enum PlaybackUsage { voiceCommunication, media }
 
@@ -106,13 +111,13 @@ class DebugAudioProfile {
   final AudioManagerMode audioManagerMode;
 
   Map<String, dynamic> toMap() => {
-        'captureSource': captureSource.name,
-        'playbackUsage': playbackUsage.name,
-        'performanceMode': performanceMode.name,
-        'manualAec': manualAec,
-        'speakerphone': speakerphone,
-        'audioManagerMode': audioManagerMode.name,
-      };
+    'captureSource': captureSource.name,
+    'playbackUsage': playbackUsage.name,
+    'performanceMode': performanceMode.name,
+    'manualAec': manualAec,
+    'speakerphone': speakerphone,
+    'audioManagerMode': audioManagerMode.name,
+  };
 
   DebugAudioProfile copyWith({
     CaptureSource? captureSource,
@@ -121,24 +126,29 @@ class DebugAudioProfile {
     bool? manualAec,
     bool? speakerphone,
     AudioManagerMode? audioManagerMode,
-  }) =>
-      DebugAudioProfile(
-        captureSource: captureSource ?? this.captureSource,
-        playbackUsage: playbackUsage ?? this.playbackUsage,
-        performanceMode: performanceMode ?? this.performanceMode,
-        manualAec: manualAec ?? this.manualAec,
-        speakerphone: speakerphone ?? this.speakerphone,
-        audioManagerMode: audioManagerMode ?? this.audioManagerMode,
-      );
+  }) => DebugAudioProfile(
+    captureSource: captureSource ?? this.captureSource,
+    playbackUsage: playbackUsage ?? this.playbackUsage,
+    performanceMode: performanceMode ?? this.performanceMode,
+    manualAec: manualAec ?? this.manualAec,
+    speakerphone: speakerphone ?? this.speakerphone,
+    audioManagerMode: audioManagerMode ?? this.audioManagerMode,
+  );
 
-  static DebugAudioProfile fromMap(Map<dynamic, dynamic> map) => DebugAudioProfile(
-        captureSource: CaptureSource.values.byName(map['captureSource'] as String),
-        playbackUsage: PlaybackUsage.values.byName(map['playbackUsage'] as String),
-        performanceMode: AudioPerformanceMode.values.byName(map['performanceMode'] as String),
-        manualAec: map['manualAec'] as bool,
-        speakerphone: map['speakerphone'] as bool,
-        audioManagerMode: AudioManagerMode.values.byName(map['audioManagerMode'] as String),
-      );
+  static DebugAudioProfile fromMap(
+    Map<dynamic, dynamic> map,
+  ) => DebugAudioProfile(
+    captureSource: CaptureSource.values.byName(map['captureSource'] as String),
+    playbackUsage: PlaybackUsage.values.byName(map['playbackUsage'] as String),
+    performanceMode: AudioPerformanceMode.values.byName(
+      map['performanceMode'] as String,
+    ),
+    manualAec: map['manualAec'] as bool,
+    speakerphone: map['speakerphone'] as bool,
+    audioManagerMode: AudioManagerMode.values.byName(
+      map['audioManagerMode'] as String,
+    ),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -277,6 +287,19 @@ abstract class VoiceEngine {
   ///
   /// 必须在原生做：Dart 侧没有可用的 Opus 解码器。
   Future<DecodedAudio> decodeAudio(Uint8List bytes);
+
+  /// 喂一块**连续 Ogg Opus 流**，返回这次解出来的 PCM。
+  ///
+  /// 解码器是带状态的：第一次调用从流里读 OpusHead 建解码器，之后每次
+  /// 攒够完整的 Ogg page / Opus packet 就吐 PCM。没有输出时返回 null。
+  /// 采样率以解码器**实际输出**为准。
+  Future<DecodedAudio?> feedOggStream(Uint8List bytes);
+
+  /// 流结束：送 EOS，把解码器里剩下的 PCM 收干净并释放。
+  Future<DecodedAudio?> finishOggStream();
+
+  /// 打断 / 切档案：丢掉当前解码状态，不等剩余音频。
+  Future<void> resetOggStream();
 
   /// 本机有没有 Opus 编码器。
   ///

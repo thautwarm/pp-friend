@@ -13,6 +13,7 @@ import 'package:pp_friend/src/config/assistant_config.dart';
 import 'package:pp_friend/src/conversation/conversation_controller.dart';
 import 'package:pp_friend/src/storage/memory_message_store.dart';
 
+import 'support/framed_brain.dart';
 import 'support/voice_fakes.dart';
 
 /// 48kHz 下 20ms 一帧。
@@ -20,10 +21,27 @@ final Uint8List _frame = Uint8List(1920);
 
 /// 切出来的一句话。内容无所谓，要的是"有东西排进上传队列"。
 SpeechSegment _segment() => SpeechSegment(
-      pcm16le: Uint8List(320),
-      sampleRate: fakeSileroRate,
-      durationSeconds: 0.3,
-    );
+  pcm16le: Uint8List(320),
+  sampleRate: fakeSileroRate,
+  durationSeconds: 0.3,
+);
+
+/// 一条排队的假回复。
+class _FakeReply {
+  _FakeReply({
+    required this.text,
+    required this.sentences,
+    required this.chunks,
+    required this.audio,
+    required this.skipped,
+  });
+
+  final String text;
+  final List<String> sentences;
+  final List<String> chunks;
+  final List<int> audio;
+  final bool skipped;
+}
 
 /// 假 brain **群**：每个档案一个。
 ///
@@ -35,10 +53,13 @@ class _FakeBrains {
   int factoryCalls = 0;
 
   /// brain_id → 排着队还没发出去的回复。发完就一直"没话说"。
-  final Map<String, List<Map<String, Object>>> replies = {};
+  final Map<String, List<_FakeReply>> replies = {};
 
   /// brain_id → 收到过多少次 /brain-to-human
   final Map<String, int> polls = {};
+
+  /// brain_id → 每次 /brain-to-human 带上的 skip_before（没带就是 null）。
+  final Map<String, List<int?>> skipBefore = {};
 
   /// 每次上行请求体，按先后顺序。
   final List<List<int>> uploads = [];
@@ -55,71 +76,99 @@ class _FakeBrains {
   void queue(
     String brainId, {
     required String text,
+    List<String>? sentences,
+    List<String>? chunks,
     List<int> audio = const [],
-    List<Map<String, Object>>? spans,
+    bool skipped = false,
   }) {
-    replies.putIfAbsent(brainId, () => []).add({
-      'kind': 'text',
-      'text': text,
-      if (audio.isNotEmpty) 'audio': Uint8List.fromList(audio),
-      'spans': ?spans,
-    });
+    replies
+        .putIfAbsent(brainId, () => [])
+        .add(
+          _FakeReply(
+            text: text,
+            sentences: sentences ?? <String>[text],
+            chunks: chunks ?? <String>[text],
+            audio: audio,
+            skipped: skipped,
+          ),
+        );
   }
 
   BrainClient call() {
     factoryCalls++;
-    return BrainClient(client: MockClient(_handle));
+    return BrainClient(client: MockClient.streaming(_handle));
   }
 
-  Future<http.Response> _handle(http.Request request) async {
-    final body =
-        msgpack.deserialize(Uint8List.fromList(request.bodyBytes)) as Map;
+  Future<http.StreamedResponse> _handle(
+    http.BaseRequest request,
+    http.ByteStream bodyStream,
+  ) async {
+    final requestBytes = await bodyStream.toBytes();
+    final body = msgpack.deserialize(requestBytes) as Map;
     final brainId = body['brain_id'] as String? ?? '';
 
     if (request.url.path.endsWith('/brain-to-human')) {
       polls[brainId] = (polls[brainId] ?? 0) + 1;
-      if (unauthorized.contains(brainId)) return http.Response('', 401);
+      skipBefore
+          .putIfAbsent(brainId, () => <int?>[])
+          .add(body['skip_before'] as int?);
+      if (unauthorized.contains(brainId)) {
+        return http.StreamedResponse(const Stream<List<int>>.empty(), 401);
+      }
       final queue = replies[brainId];
       if (queue == null || queue.isEmpty) {
         // 没话说。用 503 让轮询走退避分支，别空转。
-        return http.Response('', 503);
+        return http.StreamedResponse(const Stream<List<int>>.empty(), 503);
       }
-      return http.Response.bytes(
-        msgpack.serialize(queue.removeAt(0)),
+
+      // 一条响应只回答一件事：没内容、一条 skipped 旧消息、或一条真回复。
+      // 真回复的 body 是前导后面跟一段连续 Ogg；内容无所谓，解码交给
+      // 假引擎，这里只负责把字节原样送出去。
+      final next = queue.removeAt(0);
+      final response = speechBody(
+        next.text,
+        skipped: next.skipped,
+        ogg: next.skipped ? const <int>[] : next.audio,
+      );
+
+      return http.StreamedResponse(
+        Stream<List<int>>.value(response),
         200,
-        headers: {'content-type': 'application/msgpack'},
+        headers: const {'content-type': 'application/octet-stream'},
       );
     }
 
-    uploads.add(request.bodyBytes);
+    uploads.add(requestBytes);
     uploadTargets.add(brainId);
     // 记完之后再挂住：请求算"已经到了服务端"，只是回包还没回来
     if (uploadGate != null) await uploadGate!.future;
-    return http.Response.bytes(
-      msgpack.serialize(<String, dynamic>{'kind': 'text', 'text': '收到'}),
+    return http.StreamedResponse(
+      Stream<List<int>>.value(
+        msgpack.serialize(<String, dynamic>{'kind': 'text', 'text': '收到'}),
+      ),
       200,
-      headers: {'content-type': 'application/msgpack'},
+      headers: const {'content-type': 'application/msgpack'},
     );
   }
 }
 
 /// 两个档案：A 聚焦、B 在后台。
 AssistantConfig _twoProfiles({bool bargeIn = false}) => AssistantConfig(
-      profiles: const [
-        Profile(
-          id: 'p_a',
-          name: 'A',
-          brain: BrainConfig(baseUrl: 'http://test.local:8000', brainId: 'a'),
-        ),
-        Profile(
-          id: 'p_b',
-          name: 'B',
-          brain: BrainConfig(baseUrl: 'http://test.local:8000', brainId: 'b'),
-        ),
-      ],
-      focusedProfileId: 'p_a',
-      bargeIn: bargeIn,
-    );
+  profiles: const [
+    Profile(
+      id: 'p_a',
+      name: 'A',
+      brain: BrainConfig(baseUrl: 'http://test.local:8000', brainId: 'a'),
+    ),
+    Profile(
+      id: 'p_b',
+      name: 'B',
+      brain: BrainConfig(baseUrl: 'http://test.local:8000', brainId: 'b'),
+    ),
+  ],
+  focusedProfileId: 'p_a',
+  bargeIn: bargeIn,
+);
 
 Future<ConversationController> _boot(
   _FakeBrains brains,
@@ -134,9 +183,9 @@ Future<ConversationController> _boot(
     history: history ?? MemoryMessageStore(),
     segmenterFactory:
         ({required int sampleRate, required AssistantConfig config}) async {
-      segmenter.sampleRates.add(sampleRate);
-      return segmenter;
-    },
+          segmenter.sampleRates.add(sampleRate);
+          return segmenter;
+        },
   );
   await controller.updateConfig(_twoProfiles(bargeIn: bargeIn));
   await controller.start();
@@ -149,8 +198,7 @@ Future<void> _speak(
   FakeSegmenter segmenter, {
   int frames = 20,
 }) async {
-  segmenter.statsValue =
-      const SegmenterStats(speaking: true, probability: 0.9);
+  segmenter.statsValue = const SegmenterStats(speaking: true, probability: 0.9);
   for (var i = 0; i < frames; i++) {
     engine.micCtrl.add(_frame);
   }
@@ -228,10 +276,7 @@ void main() {
       await _settle();
 
       expect(engine.playbackPushes, greaterThan(0));
-      expect(
-        controller.messages.map((m) => m.text),
-        contains('A 说的话'),
-      );
+      expect(controller.messages.map((m) => m.text), contains('A 说的话'));
     });
 
     test('关掉正在聚焦的档案，焦点挪到下一个开着的，而且它不再轮询', () async {
@@ -262,7 +307,11 @@ void main() {
   group('轮询的生命周期', () {
     test('token 改对之后，那个档案自己就能重新连上', () async {
       final brains = _FakeBrains()..unauthorized.add('a');
-      final controller = await _boot(brains, FakeVoiceEngine(), FakeSegmenter());
+      final controller = await _boot(
+        brains,
+        FakeVoiceEngine(),
+        FakeSegmenter(),
+      );
       addTearDown(controller.dispose);
 
       await _settle();
@@ -280,16 +329,24 @@ void main() {
       await controller.updateConfig(_twoProfiles());
 
       await _settle(30);
-      expect(brains.polls['a'], greaterThan(before),
-          reason: '改对 token 之后必须自己重新连上 —— 不然这个档案永远哑着，'
-              '界面还写着"正在听你说"');
+      expect(
+        brains.polls['a'],
+        greaterThan(before),
+        reason:
+            '改对 token 之后必须自己重新连上 —— 不然这个档案永远哑着，'
+            '界面还写着"正在听你说"',
+      );
       expect(controller.messages.last.text, '又能说话了');
     });
 
     test('网络一直不通时，结束对话不该被退避拖住', () async {
       // 一个回复都不排：每次 /brain-to-human 都 503，一路退避
       final brains = _FakeBrains();
-      final controller = await _boot(brains, FakeVoiceEngine(), FakeSegmenter());
+      final controller = await _boot(
+        brains,
+        FakeVoiceEngine(),
+        FakeSegmenter(),
+      );
       addTearDown(controller.dispose);
 
       // 退避是 500 → 1000 → 2000ms…，等它睡进那个 2 秒的退避里再停
@@ -299,9 +356,128 @@ void main() {
       await controller.stop();
       watch.stop();
 
-      expect(watch.elapsedMilliseconds, lessThan(600),
-          reason: 'stop 会 await 那条轮询，退避里睡着的十几秒不该算进来 —— '
-              '那期间界面卡在"请稍候…"，而且声音还没停');
+      expect(
+        watch.elapsedMilliseconds,
+        lessThan(600),
+        reason:
+            'stop 会 await 那条轮询，退避里睡着的十几秒不该算进来 —— '
+            '那期间界面卡在"请稍候…"，而且声音还没停',
+      );
+    });
+  });
+
+  group('离线积压', () {
+    test('停着的时候积压的消息全部原样送达：文本进消息流，音频照播', () async {
+      final engine = FakeVoiceEngine()..opusUpstream = true;
+      final brains = _FakeBrains();
+      final controller = await _boot(brains, engine, FakeSegmenter());
+      addTearDown(controller.dispose);
+
+      brains.queue('a', text: '旧消息一。');
+      brains.queue('a', text: '旧消息二。');
+      brains.queue('a', text: '新回复。');
+      await _settle();
+
+      expect(
+        controller.messages.map((m) => m.text),
+        containsAll(<String>['旧消息一。', '旧消息二。', '新回复。']),
+        reason: '队列没满就该全送过来，一条都不能悄悄吞掉',
+      );
+      // 方案 A 一条响应一条消息，三条积压就是三次轮询。
+      expect(brains.polls['a'], greaterThanOrEqualTo(3));
+      expect(
+        brains.skipBefore['a']!.every((value) => value == null),
+        isTrue,
+        reason: '客户端不再请求跳过积压，必须原样送达',
+      );
+
+      await controller.sendTestUtterance();
+      await _settle();
+      final body = _body(brains.uploads.single);
+      expect(body.containsKey('unheard_text'), isFalse, reason: '都听到了，没有没听到的账');
+    });
+
+    test('万一服务端回了 skipped，文本也显示出来并记进没听到', () async {
+      final engine = FakeVoiceEngine()..opusUpstream = true;
+      final brains = _FakeBrains();
+      final controller = await _boot(brains, engine, FakeSegmenter());
+      addTearDown(controller.dispose);
+
+      brains.queue('a', text: '旧消息一。', skipped: true);
+      brains.queue('a', text: '新回复。');
+      await _settle();
+
+      expect(
+        controller.messages.map((m) => m.text),
+        containsAll(<String>['旧消息一。', '新回复。']),
+        reason: '服务端即使跳过合成，文本也不能从界面上消失',
+      );
+
+      await controller.sendTestUtterance();
+      await _settle();
+      final body = _body(brains.uploads.single);
+      expect(body['unheard_text'], '旧消息一。');
+    });
+
+    test('打断之后才带 skip_before；被跳过的文本显示并记进没听到', () async {
+      final engine = FakeVoiceEngine()
+        ..opusUpstream = true
+        ..decodedPcm = Uint8List(480000)
+        ..decodedRate = 48000
+        ..pushGate = Completer<void>();
+      final brains = _FakeBrains();
+      final controller = await _boot(brains, engine, FakeSegmenter());
+      addTearDown(controller.dispose);
+
+      // 先让它真的在播，clearPlayback 才不是空操作。
+      brains.queue(
+        'a',
+        text: '正在说的那句。',
+        sentences: const <String>['正在说的那句。'],
+        audio: const <int>[1, 2, 3, 4],
+      );
+      await _settle();
+      expect(controller.speaking, isTrue);
+
+      // 开始对话时的请求都不该带 skip_before。
+      expect(
+        brains.skipBefore['a']!.every((value) => value == null),
+        isTrue,
+        reason: '打断之前不能跳过任何东西',
+      );
+
+      // 通知栏停止说话 / 音量减键 / 开口打断，都走这一条。
+      await controller.clearPlayback();
+      engine.pushGate!.complete();
+      engine.pushGate = null;
+
+      // 打断之前排队的旧消息，服务端会以 skipped 回来。
+      brains.queue('a', text: '被打断后排队的旧消息。', skipped: true);
+      brains.queue('a', text: '打断之后的新回复。');
+      await _settle();
+
+      final vod = brains.skipBefore['a']!;
+      expect(
+        vod.whereType<int>(),
+        isNotEmpty,
+        reason: '打断之后的请求要带水位',
+      );
+      expect(vod.last, isNull, reason: '拿到真回复之后水位要清掉');
+
+      expect(
+        controller.messages.map((m) => m.text),
+        containsAll(<String>['被打断后排队的旧消息。', '打断之后的新回复。']),
+        reason: '被 skip 的文本也必须显示出来',
+      );
+
+      await controller.sendTestUtterance();
+      await _settle();
+      final body = _body(brains.uploads.single);
+      expect(
+        body['unheard_text'],
+        contains('被打断后排队的旧消息。'),
+        reason: '没合成的文字要回报给 brain',
+      );
     });
   });
 
@@ -325,8 +501,11 @@ void main() {
       final flushes = engine.flushCount;
       await controller.switchProfile('p_b');
 
-      expect(engine.flushCount, greaterThan(flushes),
-          reason: '光抬 epoch 拦不住已经推进 AudioTrack 缓冲的那几百毫秒');
+      expect(
+        engine.flushCount,
+        greaterThan(flushes),
+        reason: '光抬 epoch 拦不住已经推进 AudioTrack 缓冲的那几百毫秒',
+      );
       expect(controller.speaking, isFalse);
 
       engine.pushGate!.complete();
@@ -356,8 +535,11 @@ void main() {
       await controller.saveProfile(a.copyWith(enabled: false));
 
       expect(controller.config.focusedProfile!.id, 'p_b');
-      expect(engine.flushCount, greaterThan(flushes),
-          reason: '关掉正在说话的档案，它的声音必须立刻停');
+      expect(
+        engine.flushCount,
+        greaterThan(flushes),
+        reason: '关掉正在说话的档案，它的声音必须立刻停',
+      );
       expect(controller.speaking, isFalse);
 
       engine.pushGate!.complete();
@@ -396,8 +578,7 @@ void main() {
       brains.uploadGate = null;
       await _settle(20);
 
-      expect(brains.uploadTargets, ['a'],
-          reason: '切走之后不能再发任何东西 —— 尤其是不能发给新档案');
+      expect(brains.uploadTargets, ['a'], reason: '切走之后不能再发任何东西 —— 尤其是不能发给新档案');
       expect(brains.uploadTargets, isNot(contains('b')));
       expect(controller.queuedUtterances, 0);
     });
@@ -434,8 +615,7 @@ void main() {
       await controller.switchProfile('p_b');
       await _settle();
 
-      expect(engine.micListenCount, listens,
-          reason: '麦克风和扬声器全机只有一份，切档案不该碰它们');
+      expect(engine.micListenCount, listens, reason: '麦克风和扬声器全机只有一份，切档案不该碰它们');
     });
 
     test('切到关掉的档案上会被拒绝', () async {
@@ -459,24 +639,22 @@ void main() {
       // 必须是 controller 真正在用的那一个 —— 换个新的，
       // 帧喂进去了但 statsValue 设不到它身上，打断根本不会触发。
       final segmenter = FakeSegmenter();
-      final controller =
-          await _boot(brains, engine, segmenter, bargeIn: true);
+      final controller = await _boot(brains, engine, segmenter, bargeIn: true);
       addTearDown(controller.dispose);
 
-      // A 正在播一条带按句时间账的回复
+      // A 正在播一条 3 秒的回复；流式解码一次吐完，客户端按 1 秒一块
+      // 推进播放队列（共 3 块）。
+      engine.decodedPcm = Uint8List(288000);
+      engine.decodedRate = 48000;
       brains.queue(
         'a',
         text: '第一句。第二句。第三句。',
+        sentences: const ['第一句。', '第二句。', '第三句。'],
+        chunks: const ['第一句。', '第二句。', '第三句。'],
         audio: const [1, 2, 3, 4],
-        spans: const [
-          {'text': '第一句。', 'ms': 1000},
-          {'text': '第二句。', 'ms': 1000},
-          {'text': '第三句。', 'ms': 1000},
-        ],
       );
       await _settle();
-      expect(controller.messages.map((m) => m.text),
-          contains('第一句。第二句。第三句。'));
+      expect(controller.messages.map((m) => m.text), contains('第一句。第二句。第三句。'));
 
       // 播到 1.5 秒时用户开口，把 A 打断
       engine.headMs = 1500;
@@ -494,8 +672,11 @@ void main() {
 
       expect(brains.uploadTargets.single, 'b');
       final toB = _body(brains.uploads.single);
-      expect(toB.containsKey('unheard_text'), isFalse,
-          reason: '那些字是 A 说的，报给 B 就成了无中生有');
+      expect(
+        toB.containsKey('unheard_text'),
+        isFalse,
+        reason: '那些字是 A 说的，报给 B 就成了无中生有',
+      );
       expect(toB.containsKey('heard_ms'), isFalse);
 
       // 切回 A，同一笔账还得在 —— 切档案不该把它弄丢
@@ -509,7 +690,9 @@ void main() {
       expect(brains.uploadTargets.single, 'a');
       final toA = _body(brains.uploads.single);
       expect(toA['heard_ms'], 1500);
-      expect(toA['unheard_text'], '第二句。第三句。');
+      // 播到 1.5s：第一块整块听完，第二块听到一半（按比例往后snap到
+      // 最近的断句点，算整句听完），第三块一个字都没听到。
+      expect(toA['unheard_text'], '第三句。');
     });
   });
 
@@ -518,8 +701,12 @@ void main() {
       final store = MemoryMessageStore();
       final engine = FakeVoiceEngine();
       final brains = _FakeBrains();
-      final first =
-          await _boot(brains, engine, FakeSegmenter(), history: store);
+      final first = await _boot(
+        brains,
+        engine,
+        FakeSegmenter(),
+        history: store,
+      );
 
       brains.queue('a', text: '记住我这一句');
       await _settle();

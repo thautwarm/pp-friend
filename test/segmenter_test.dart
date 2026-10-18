@@ -89,7 +89,9 @@ void main() {
       await pumpEventQueue();
 
       segmenter.frames.clear();
-      engine.micCtrl.add(Uint8List.fromList(List<int>.generate(64, (i) => i + 1)));
+      engine.micCtrl.add(
+        Uint8List.fromList(List<int>.generate(64, (i) => i + 1)),
+      );
       await pumpEventQueue();
 
       expect(segmenter.frames, isNotEmpty, reason: '静音也要喂，模型状态得继续推进');
@@ -126,10 +128,7 @@ void main() {
       expect(controller.active, isFalse);
       expect(controller.segmenterError, isNotNull);
       expect(engine.micListenCount, 0);
-      expect(
-        controller.log.any((e) => e.message.contains('加载失败')),
-        isTrue,
-      );
+      expect(controller.log.any((e) => e.message.contains('加载失败')), isTrue);
     });
   });
 }

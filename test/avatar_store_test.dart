@@ -89,12 +89,17 @@ void main() {
       final root = _root();
       final store = AvatarStore(root);
 
-      final first = await store.import('p_a', _source(root, 'a.png', '第一张').path);
+      final first = await store.import(
+        'p_a',
+        _source(root, 'a.png', '第一张').path,
+      );
       // 文件名带毫秒时间戳。隔开一点，别赌两次调用落在同一毫秒 ——
       // 真撞上了也不会出错（同名覆盖，内容是新那张），只是这个断言会假红。
       await Future<void>.delayed(const Duration(milliseconds: 3));
-      final second =
-          await store.import('p_a', _source(root, 'b.png', '第二张').path);
+      final second = await store.import(
+        'p_a',
+        _source(root, 'b.png', '第二张').path,
+      );
 
       // 界面按路径缓存 ImageProvider：路径不变的话，换了图还会显示旧的那张
       expect(second, isNot(first));

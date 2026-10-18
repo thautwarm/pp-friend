@@ -100,7 +100,9 @@ class FileMessageStore implements MessageStore {
     final profile = _profile(profileId);
     // 同一个档案的写必须串行：上行回调和轮询回调是两条并发的线，
     // 同时追加会把两行插在一起，那个文件以后就再也读不出来了。
-    final result = profile.chain.then((_) => _appendNow(profile, role, text, at));
+    final result = profile.chain.then(
+      (_) => _appendNow(profile, role, text, at),
+    );
     profile.chain = result.then((_) {}, onError: (_) {});
     return result;
   }
@@ -221,7 +223,9 @@ class FileMessageStore implements MessageStore {
     List<String> lines;
     try {
       final bytes = await file.readAsBytes();
-      lines = const LineSplitter().convert(utf8.decode(bytes, allowMalformed: true));
+      lines = const LineSplitter().convert(
+        utf8.decode(bytes, allowMalformed: true),
+      );
     } on FileSystemException catch (e) {
       onWarn?.call('读不了历史文件 ${file.path}：$e');
       return const [];
@@ -233,8 +237,9 @@ class FileMessageStore implements MessageStore {
       try {
         final decoded = jsonDecode(line);
         if (decoded is! Map) continue;
-        final message =
-            ConversationMessage.fromJson(decoded.cast<String, dynamic>());
+        final message = ConversationMessage.fromJson(
+          decoded.cast<String, dynamic>(),
+        );
         if (message != null) out.add(message);
       } catch (_) {
         // 崩溃过一次之后最后一行多半是半截的，这行注定解析不出来。

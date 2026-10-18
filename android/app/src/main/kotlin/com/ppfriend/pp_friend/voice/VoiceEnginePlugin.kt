@@ -6,6 +6,7 @@ import android.os.Looper
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
+import java.util.concurrent.Executors
 
 /**
  * 把原生引擎接到 Flutter 上。
@@ -33,6 +34,19 @@ class VoiceEnginePlugin(private val context: Context, messenger: BinaryMessenger
 
     private val engine = NativeVoiceEngine.get(context)
     private val mainHandler = Handler(Looper.getMainLooper())
+
+    /// 下行 Ogg 流解码器。**所有调用都排到同一个线程**，MediaCodec 和
+    /// 增量解析状态都不是线程安全的。
+    private val oggDecoder = StreamingOggDecoder()
+    private val oggExecutor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "voice-ogg")
+    }
+
+    private fun DecodedAudio.toMap(): Map<String, Any> = mapOf(
+        "pcm" to pcm16le,
+        "sampleRate" to sampleRate,
+        "channels" to channels,
+    )
 
     init {
         MethodChannel(messenger, METHOD_CHANNEL).setMethodCallHandler { call, result ->
@@ -122,6 +136,66 @@ class VoiceEnginePlugin(private val context: Context, messenger: BinaryMessenger
                                     }
                                 }
                             }, "voice-decode").start()
+                        }
+                    }
+
+                    // 下行：连续的 Ogg Opus 流。feed 返回这次解出来的 PCM，
+                    // 没有输出就返回 null。必须在单线程上按顺序调用。
+                    "feedOggStream" -> {
+                        val bytes = call.argument<ByteArray>("bytes")
+                        if (bytes == null) {
+                            result.error("badArgs", "feedOggStream 需要 bytes", null)
+                        } else {
+                            oggExecutor.execute {
+                                try {
+                                    val decoded = oggDecoder.feed(bytes)
+                                    mainHandler.post {
+                                        result.success(decoded?.toMap())
+                                    }
+                                } catch (t: Throwable) {
+                                    // 解码器可能已经进了错误状态：这条算失败，
+                                    // 但下一条必须从干净的 OpusHead 重新开始。
+                                    runCatching { oggDecoder.reset() }
+                                    mainHandler.post {
+                                        result.error(
+                                            "decodeFailed",
+                                            t.message ?: t.toString(),
+                                            null,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    "finishOggStream" -> oggExecutor.execute {
+                        try {
+                            val decoded = oggDecoder.finish()
+                            mainHandler.post { result.success(decoded?.toMap()) }
+                        } catch (t: Throwable) {
+                            runCatching { oggDecoder.reset() }
+                            mainHandler.post {
+                                result.error(
+                                    "decodeFailed",
+                                    t.message ?: t.toString(),
+                                    null,
+                                )
+                            }
+                        }
+                    }
+
+                    "resetOggStream" -> oggExecutor.execute {
+                        try {
+                            oggDecoder.reset()
+                            mainHandler.post { result.success(true) }
+                        } catch (t: Throwable) {
+                            mainHandler.post {
+                                result.error(
+                                    "decodeFailed",
+                                    t.message ?: t.toString(),
+                                    null,
+                                )
+                            }
                         }
                     }
 

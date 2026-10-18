@@ -50,7 +50,8 @@ class AvatarStore {
     }
 
     final extension = _extensionOf(sourcePath);
-    final name = '${profileId}_${DateTime.now().millisecondsSinceEpoch}$extension';
+    final name =
+        '${profileId}_${DateTime.now().millisecondsSinceEpoch}$extension';
     await dir.create(recursive: true);
     await source.copy('${dir.path}/$name');
     return name;

@@ -8,6 +8,7 @@ import '../audio/segmenter.dart';
 import '../audio/silero_segmenter.dart';
 import '../audio/test_tone.dart';
 import '../brain/brain_client.dart';
+import '../brain/voice_directives.dart';
 import '../config/assistant_config.dart';
 import '../config/config_store.dart';
 import '../storage/app_dirs.dart';
@@ -21,22 +22,56 @@ import 'message.dart';
 import 'profile_runtime.dart';
 import 'utterance_queue.dart';
 
-/// 已经收到、还没轮到播的一条回复。
+/// 已经收到、可能还没播完的一条回复。
 ///
-/// **取和播分成两条线**之后才有这个东西：轮询那条只管拿，拿到就往这里塞，
-/// 塞完立刻再去问下一条；播的循环从队头取一条播一条。队列里的东西是
-/// "已经拿到手、但用户还没听到"的 —— 被清掉时整条算没听到，正是
-/// `unheard_text` 的第二项。
-class _PendingReply {
-  _PendingReply({required this.text, required this.audio, required this.spans});
+/// 分帧流之后不再有"整条回复队列"：音频一到就解码推进原生 FIFO，顺序由
+/// 原生队列保证。这里只留记账需要的薄薄一层 —— 这条回复的全文、句子表、
+/// 以及每一块已经入站/推下去的音频。打断时靠它把"播到第几毫秒"映射回
+/// "哪几块文字没听到"。
+class _PlayingReply {
+  _PlayingReply({required this.text, required this.stream});
 
+  /// 前导里的完整原文。上屏用的是它。
   final String text;
 
-  /// 原始 Ogg Opus，**还没解码**。到真要播的时候才解 ——
-  /// 万一这条在队列里就被清掉，解码白做。
-  final Uint8List audio;
+  /// 真正会被念出来的部分（剥掉 `<!-- disable voice -->` 段）。
+  ///
+  /// 新协议没有句子表了，打断时只能按"播放头 / 已推送时长"的比例从
+  /// 这段文字里估一个切点。
+  late final String spoken = spokenText(text);
 
-  final List<BrainSpan> spans;
+  final BrainReplyStream stream;
+
+  /// 这一条已经推进原生队列的采样数。
+  int pushedSamples = 0;
+
+  /// 这条回复在时间线里的起始采样位置。
+  int startSample = 0;
+
+  /// 是否已经开始推音频。全静音回复没有。
+  bool audioStarted = false;
+
+  /// body 正常结束了。
+  bool ended = false;
+
+  /// 客户端主动取消了（打断/清空/切档案）。
+  bool cancelled = false;
+
+  /// 已经放进 [_timeline]。同一条只放一次。
+  bool inTimeline = false;
+}
+
+/// 一次打断算出来的账。
+class _InterruptAccount {
+  _InterruptAccount({
+    required this.heardMs,
+    required this.unheardText,
+    required this.discarded,
+  });
+
+  final int heardMs;
+  final String? unheardText;
+  final int discarded;
 }
 
 class LogEntry {
@@ -85,20 +120,19 @@ class ConversationController extends ChangeNotifier {
     AppDirResolver? appDir,
     AvatarStore? avatars,
     SegmenterFactory? segmenterFactory,
-  })  : _engine = engine ?? VoiceEngine.instance,
-        _store = store ?? ConfigStore(),
-        _brainFactory =
-            brainFactory ?? (brain == null ? BrainClient.new : () => brain),
-        _injectedHistory = history,
-        _injectedAvatars = avatars,
-        _appDirResolver = appDir ?? resolveAppDir,
-        _segmenterFactory = segmenterFactory ?? _defaultSegmenterFactory;
+  }) : _engine = engine ?? VoiceEngine.instance,
+       _store = store ?? ConfigStore(),
+       _brainFactory =
+           brainFactory ?? (brain == null ? BrainClient.new : () => brain),
+       _injectedHistory = history,
+       _injectedAvatars = avatars,
+       _appDirResolver = appDir ?? resolveAppDir,
+       _segmenterFactory = segmenterFactory ?? _defaultSegmenterFactory;
 
   static Future<Segmenter> _defaultSegmenterFactory({
     required int sampleRate,
     required AssistantConfig config,
-  }) =>
-      SileroSegmenter.open(inputSampleRate: sampleRate, config: config);
+  }) => SileroSegmenter.open(inputSampleRate: sampleRate, config: config);
 
   final VoiceEngine _engine;
   final ConfigStore _store;
@@ -210,7 +244,8 @@ class ConversationController extends ChangeNotifier {
 
     final volumeKeyChanged =
         next.volumeKeyClearsQueue != _config.volumeKeyClearsQueue;
-    final pvadChanged = next.pvadEnabled != _config.pvadEnabled ||
+    final pvadChanged =
+        next.pvadEnabled != _config.pvadEnabled ||
         next.pvadThreshold != _config.pvadThreshold ||
         next.pvadMinTargetRatio != _config.pvadMinTargetRatio;
 
@@ -316,8 +351,10 @@ class ConversationController extends ChangeNotifier {
     for (final b in voiceprint.bytes) {
       fp = ((fp ^ b) * 0x01000193) & 0xffffffff;
     }
-    debugPrint('SPK attach fp=${fp.toRadixString(16)} '
-        'cos>=${_config.pvadMinCosine}');
+    debugPrint(
+      'SPK attach fp=${fp.toRadixString(16)} '
+      'cos>=${_config.pvadMinCosine}',
+    );
     final ok = await segmenter.attachSpeakerGate(
       voiceprint.bytes,
       threshold: _config.pvadThreshold,
@@ -325,8 +362,10 @@ class ConversationController extends ChangeNotifier {
       minCosine: _config.pvadMinCosine,
     );
     if (ok) {
-      _append('说话人识别已启用：只上传本人的声音'
-          '（声纹相似度 ≥ ${_config.pvadMinCosine.toStringAsFixed(2)}）');
+      _append(
+        '说话人识别已启用：只上传本人的声音'
+        '（声纹相似度 ≥ ${_config.pvadMinCosine.toStringAsFixed(2)}）',
+      );
     } else {
       final why = segmenter.speakerGateError;
       _append('⚠️ 说话人识别没挂上${why == null ? '' : '：$why'}');
@@ -338,11 +377,13 @@ class ConversationController extends ChangeNotifier {
   int _filteredLogCount = 0;
 
   void _onFilteredSegment(FilteredSegment segment) {
-    debugPrint('SPK drop ${segment.durationMs}ms '
-        'cos=${segment.speakerCos.toStringAsFixed(3)} '
-        'pvad=${segment.pvadScore.toStringAsFixed(3)} '
-        'ratio=${segment.pvadTargetRatio.toStringAsFixed(2)} '
-        'feed=${_segmenter?.stats.lastFeedMicros ?? 0}us');
+    debugPrint(
+      'SPK drop ${segment.durationMs}ms '
+      'cos=${segment.speakerCos.toStringAsFixed(3)} '
+      'pvad=${segment.pvadScore.toStringAsFixed(3)} '
+      'ratio=${segment.pvadTargetRatio.toStringAsFixed(2)} '
+      'feed=${_segmenter?.stats.lastFeedMicros ?? 0}us',
+    );
     _filteredLogCount++;
     if (_filteredLogCount % 5 != 1) return;
     final detail = segment.speakerCos >= 0
@@ -379,7 +420,7 @@ class ConversationController extends ChangeNotifier {
           isActive: () => _active,
           // 现读，不缓存：焦点随时可能被换掉（滑动、关闭档案、删档案）
           isFocused: () => _config.focusedProfileId == entry.key,
-          onReply: _enqueueReply,
+          onReply: _handleReplyStream,
         );
       } else {
         existing.updateProfile(entry.value);
@@ -439,8 +480,9 @@ class ConversationController extends ChangeNotifier {
   bool _opusUpstream = false;
   bool get opusUpstream => _opusUpstream;
 
-  final ValueNotifier<AudioLevels> levelsNotifier =
-      ValueNotifier(const AudioLevels(micDb: -120, playbackDb: -120));
+  final ValueNotifier<AudioLevels> levelsNotifier = ValueNotifier(
+    const AudioLevels(micDb: -120, playbackDb: -120),
+  );
 
   final List<LogEntry> _log = <LogEntry>[];
   List<LogEntry> get log => List.unmodifiable(_log);
@@ -500,7 +542,6 @@ class ConversationController extends ChangeNotifier {
   /// **同步、不查文件**：这个方法会在每帧 build 里被调用。文件真丢了
   /// 由 `Image` 的 errorBuilder 退回图标。
   String? avatarPathOf(Profile profile) => _avatars?.pathOf(profile.avatarFile);
-
 
   /// 切换的串行队列。见 [switchProfile]。
   Future<void> _switchQueue = Future<void>.value();
@@ -652,8 +693,7 @@ class ConversationController extends ChangeNotifier {
 
   String? get segmenterName => _segmenter?.name;
 
-  SegmenterStats get segmenterStats =>
-      _segmenter?.stats ?? SegmenterStats.idle;
+  SegmenterStats get segmenterStats => _segmenter?.stats ?? SegmenterStats.idle;
 
   StreamSubscription<Uint8List>? _micSub;
   StreamSubscription<AudioLevels>? _levelSub;
@@ -705,34 +745,28 @@ class ConversationController extends ChangeNotifier {
   /// 因为下一次上传时读的是"当前聚焦那个档案"的账。这是整个改造里最隐蔽的
   /// 一个 bug，专门有测试盯着。
 
-  /// 正在播的这条回复的时间账（brain 给的，**可能为空**）。
-  /// 有它就精确到句；没有就退回按比例估。
-  List<BrainSpan> _replySpans = const <BrainSpan>[];
-
-  /// 正在播的这条回复的全文和音频总长（毫秒）。
-  /// brain 没给时间账时，靠这两个按比例估"断在哪个字"。
-  String _replyText = '';
-  int _replyTotalMs = 0;
-
-  /// 已收到、还没轮到播的回复。队头正在播。
+  /// 已经推过音频、可能还没播完的回复，按推送顺序排。
   ///
-  /// **取和播是两条线**：轮询循环只管把拿到的塞进来，塞完立刻再问；
-  /// 播的循环单独跑，从队头取一条播一条。这样两条回复之间没有"等下一次
-  /// 网络往返"的空隙，队列也成了一个真的东西 —— 被清掉时，里面还没轮到
-  /// 播的整条都算用户没听到。
-  final List<_PendingReply> _replyQueue = <_PendingReply>[];
+  /// 顺序由原生 FIFO 保证；这里只是记账。打断时用播放头在时间线里的位置
+  /// 找到"正在响的那一条"，而不是想当然地拿最后一条。
+  final List<_PlayingReply> _timeline = <_PlayingReply>[];
 
-  /// 队列上限。轮询比播放快得多时兜底，免得对面一口气灌进来把内存吃光。
-  static const int replyQueueLimit = 4;
+  /// 当前时间线里已经推下去的总采样数。下一条回复的起始位置就是它。
+  int _timelinePushedSamples = 0;
 
-  /// 队列的"有东西了"信号。播放循环空转时挂在这上面。
-  Completer<void>? _queueSignal;
+  /// 当前时间线的播放头基线。播放头会被 flush 归零。
+  int _timelineBaseHeadMs = 0;
 
-  Future<void>? _playbackTask;
+  /// 时间线里是否已经有音频。没有时播放头不可作为"已听到"的依据。
+  bool _timelineHasAudio = false;
 
-  /// 这条回复开播时的播放头。播放头会被"清空"归零，
-  /// 减掉基线才是"这条回复里听到了多少"。
-  int _replyHeadBaseMs = 0;
+  /// 当前正在从轮询循环里消费的那条流。打断时取消它，服务端就会停止
+  /// 后续合成。
+  BrainReplyStream? _activeReply;
+
+  /// 原生播放队列最多提前压多少毫秒的音频。服务端灌得比播放快时兜底，
+  /// 也顺便给 TCP 一个自然的背压。
+  static const int maxQueuedPlaybackMs = 10000;
 
   /// 打断开关（存在配置里）。开了才在用户开口时停掉 AI。
   bool get bargeIn => _config.bargeIn;
@@ -795,8 +829,10 @@ class ConversationController extends ChangeNotifier {
         _append('brain 地址或 brain_id 没填，去配置页补上');
         return;
       }
-      _append('brain：${brain.baseUrl} / id=${brain.brainId}'
-          '${brain.token.trim().isEmpty ? "（未启用鉴权）" : "（已带 token）"}');
+      _append(
+        'brain：${brain.baseUrl} / id=${brain.brainId}'
+        '${brain.token.trim().isEmpty ? "（未启用鉴权）" : "（已带 token）"}',
+      );
 
       // 顺序有讲究：前台服务必须在 App 前台时启动；音频配置要在
       // startAudio 之前应用，因为它决定采集源和播放属性。
@@ -818,9 +854,11 @@ class ConversationController extends ChangeNotifier {
       // minSdk 已是 29，但**仍然探测**：OEM 差异真实存在，
       // 不是所有 API 29+ 的机器都一定有 Opus 编码器。
       _opusUpstream = await _engine.opusEncoderAvailable();
-      _append(_opusUpstream
-          ? '上行编码：Ogg Opus'
-          : '⚠️ 本机没有 Opus 编码器，语音发不出去（规范只收 Ogg Opus）');
+      _append(
+        _opusUpstream
+            ? '上行编码：Ogg Opus'
+            : '⚠️ 本机没有 Opus 编码器，语音发不出去（规范只收 Ogg Opus）',
+      );
 
       // 顺序有讲究：**必须在订阅 micPcm 之前**建好 segmenter。
       // 加载 1.26MB 模型 + ONNX 图优化是几十到几百毫秒，落在第一帧上
@@ -841,15 +879,15 @@ class ConversationController extends ChangeNotifier {
         (_) => unawaited(_refreshStats()),
       );
 
-      _playbackEpoch = 0;
-      _replyQueue.clear();
+      // **不要把它归零。** 上一轮可能还有一个卡在原生解码里的 push，
+      // 它捕获的是旧 epoch；归零之后新会话又从 0 开始，旧 push 回来时
+      // 会认为"epoch 没变"而把声音和 speaking 状态漏进新会话。
+      _resetTimeline();
       _active = true;
 
-      // 两条线各跑各的：一条只管取，一条只管播。取的那条拿到就往队列里塞，
-      // 不等播完 —— 回话之间的空隙因此只剩网络本身。
-      _playbackTask = _playbackLoop();
-
-      // 每个开着档案各起一条轮询，独立跑，不阻塞 start()
+      // 分帧流之后不需要单独的播放循环：轮询循环收到一帧就解码、推送，
+      // 原生 FIFO 负责把多条回复的声音按顺序排好。轮询本身在
+      // _syncPolling() 里每个档案各起一条，不阻塞 start()。
       await _syncPolling();
     } catch (e) {
       _append('启动失败：$e');
@@ -890,8 +928,10 @@ class ConversationController extends ChangeNotifier {
         config: _config,
       );
       _segmenterError = null;
-      _append('本地断句：${_segmenter!.name}'
-          '（静音判定 ${_config.vadMinSilenceMs}ms / 阈值 ${_config.vadThreshold}）');
+      _append(
+        '本地断句：${_segmenter!.name}'
+        '（静音判定 ${_config.vadMinSilenceMs}ms / 阈值 ${_config.vadThreshold}）',
+      );
       // 声纹门控是可选的：挂不上只记一行日志，不能连累断句。
       await _attachSpeakerGate(_segmenter!);
       return true;
@@ -1017,11 +1057,13 @@ class ConversationController extends ChangeNotifier {
   }
 
   void _onUtterance(SpeechSegment segment) {
-    debugPrint('SPK keep ${segment.durationSeconds.toStringAsFixed(2)}s '
-        'cos=${segment.speakerCos.toStringAsFixed(3)} '
-        'pvad=${segment.pvadScore.toStringAsFixed(3)} '
-        'ratio=${segment.pvadTargetRatio.toStringAsFixed(2)} '
-        'feed=${_segmenter?.stats.lastFeedMicros ?? 0}us');
+    debugPrint(
+      'SPK keep ${segment.durationSeconds.toStringAsFixed(2)}s '
+      'cos=${segment.speakerCos.toStringAsFixed(3)} '
+      'pvad=${segment.pvadScore.toStringAsFixed(3)} '
+      'ratio=${segment.pvadTargetRatio.toStringAsFixed(2)} '
+      'feed=${_segmenter?.stats.lastFeedMicros ?? 0}us',
+    );
     _userSpeaking = false;
     // 这轮说完了，下一轮从头数起 —— 不然上一句攒的时长会算到下一句头上，
     // 让一句很轻的"嗯"也够格打断。
@@ -1039,9 +1081,11 @@ class ConversationController extends ChangeNotifier {
 
     final how = segment.forcedCut ? '说太久强制切' : '停顿切';
     final warn = segment.truncated ? '，⚠️ 开头已被缓冲挤掉' : '';
-    _append('切出一句 ${segment.durationSeconds.toStringAsFixed(1)}s'
-        '（${segment.sampleRate}Hz / $how / prob=${segment.probability.toStringAsFixed(2)}）'
-        '$warn，排队上传');
+    _append(
+      '切出一句 ${segment.durationSeconds.toStringAsFixed(1)}s'
+      '（${segment.sampleRate}Hz / $how / prob=${segment.probability.toStringAsFixed(2)}）'
+      '$warn，排队上传',
+    );
 
     _speakQueue?.add(
       QueuedUtterance(
@@ -1086,9 +1130,11 @@ class ConversationController extends ChangeNotifier {
       // 所以在 A 里攒下的"漏听"不会报给 B。
       final heard = runtime.pendingHeardMs;
       final unheard = runtime.pendingUnheardText;
-      _append('上传 ${_kb(opus.length)} → /human-to-brain'
-          '${heard == null ? "" : "（附：上一段只听到 ${(heard / 1000).toStringAsFixed(1)}s）"}'
-          '${unheard == null ? "" : "（没听到：$unheard）"}');
+      _append(
+        '上传 ${_kb(opus.length)} → /human-to-brain'
+        '${heard == null ? "" : "（附：上一段只听到 ${(heard / 1000).toStringAsFixed(1)}s）"}'
+        '${unheard == null ? "" : "（没听到：$unheard）"}',
+      );
 
       final result = await runtime.brain.humanToBrain(
         baseUrl: brain.baseUrl,
@@ -1101,10 +1147,23 @@ class ConversationController extends ChangeNotifier {
 
       if (!_active) return;
 
-      // 请求落地了，这条就不用再挂着。失败时走不到这里 —— 留着给下一次，
-      // "你漏了一段"迟到也比丢了好。
-      runtime.pendingHeardMs = null;
-      runtime.pendingUnheardText = null;
+      // 请求落地了，只清掉这次**实际带上去**的那一笔。上传期间可能又
+      // 发生了打断、或者又收到一条跳过的旧消息，那些账还没报过，
+      // 无条件清空会把它们一起吞掉。
+      final leftHeard = runtime.pendingHeardMs;
+      if (leftHeard != null) {
+        final remaining = heard == null ? leftHeard : leftHeard - heard;
+        runtime.pendingHeardMs = remaining > 0 ? remaining : null;
+      }
+      final leftUnheard = runtime.pendingUnheardText;
+      if (leftUnheard != null) {
+        if (unheard != null && leftUnheard.startsWith(unheard)) {
+          final rest = leftUnheard.substring(unheard.length);
+          runtime.pendingUnheardText = rest.isEmpty ? null : rest;
+        } else if (unheard == null) {
+          runtime.pendingUnheardText = null;
+        }
+      }
 
       final text = result.text.trim();
       if (text.isEmpty) {
@@ -1130,147 +1189,201 @@ class ConversationController extends ChangeNotifier {
     }
   }
 
-  // ---------------------------------------------------------------- 播放队列（另一条线）
+  // ---------------------------------------------------------------- 连续音频流
 
-  /// 把一条拿到的回复塞进播放队列，并叫醒播放循环。**不等它播完。**
-  void _enqueueReply(String text, Uint8List audio, List<BrainSpan> spans) {
-    // 轮询比播放快得多时的兜底，免得对面一口气灌进来把内存吃光。
-    // 丢掉的如实记成"没听到" —— 它确实没进用户耳朵。
-    if (_replyQueue.length >= replyQueueLimit) {
-      final dropped = _replyQueue.removeAt(0);
-      _appendUnheard(dropped.text);
-      _append('播放队列满了，丢掉最早的一条（算没听到）');
+  /// 消费一条回复前导之后的连续 Ogg 音频。
+  ///
+  /// 文本已经由 ProfileRuntime 记进消息流；这里从 body 前导之后的 Ogg 流
+  /// 开始，边到边解、边解边播。**不等整条收完。**
+  ///
+  /// 文本一到就挂进时间线，而不是等第一块音频：用户完全可能在音频还没
+  /// 到时打断，那时这段文字也必须算"没听到"。
+  Future<void> _handleReplyStream(
+    BrainReplyStream stream,
+    BrainReplyStart start,
+  ) async {
+    if (!_active) return;
+
+    final ledger = _PlayingReply(text: start.text, stream: stream);
+    _activeReply = stream;
+    final epoch = _playbackEpoch;
+    _addToTimeline(ledger);
+
+    try {
+      await for (final bytes in stream.audio) {
+        if (!_active || epoch != _playbackEpoch) {
+          ledger.cancelled = true;
+          await stream.cancel();
+          break;
+        }
+
+        // 用户那一句还没说完。打断是在"开口"那一刻触发的，你一直在说就不会
+        // 有第二次开口事件 —— 这条播下去也没人拦得住，只会盖在人家说话上面。
+        // 整条记成"没听到"，并断开流让服务端停止后续合成。
+        if (!ledger.audioStarted && _shouldDeferForSpeaking()) {
+          _appendUnheard(spokenText(start.text));
+          _append('你还在说话，这条先不播（整条算没听到）');
+          ledger.cancelled = true;
+          _removeFromTimeline(ledger);
+          await stream.cancel();
+          break;
+        }
+
+        await _feedOgg(ledger, bytes, epoch);
+      }
+
+      // 外部（barge-in / 清空 / 切档案）取消时，await for 会正常结束，
+      // 但这条流并没有说完 —— 后面的音频服务端不会再合成了。不能标成
+      // ended，否则记账会按"整条播完"处理，把没合成的尾巴当成听到。
+      if (!ledger.cancelled && !stream.wasCancelled) ledger.ended = true;
+    } on BrainException {
+      ledger.ended = false;
+      rethrow;
+    } catch (e) {
+      ledger.ended = false;
+      _append('播放失败：$e');
+    } finally {
+      if (ledger.cancelled ||
+          stream.wasCancelled ||
+          !_active ||
+          epoch != _playbackEpoch) {
+        // 被打断就别在后台继续喂解码器。
+        await _engine.resetOggStream();
+      } else {
+        await _finishOgg(ledger, epoch);
+      }
+
+      if (identical(_activeReply, stream)) _activeReply = null;
+      if (!ledger.audioStarted && ledger.ended) {
+        _append('回复只有文本，没有音频');
+      }
+      if (epoch == _playbackEpoch) {
+        _speaking = false;
+        _safeNotify();
+      }
     }
-
-    _replyQueue.add(_PendingReply(text: text, audio: audio, spans: spans));
-
-    final signal = _queueSignal;
-    _queueSignal = null;
-    signal?.complete();
-    notifyListeners();
   }
 
-  /// 等队列里来东西。播放循环空转时挂在这上面。
-  Future<void> _waitForReply() {
-    final existing = _queueSignal;
-    if (existing != null) return existing.future;
-    final completer = Completer<void>();
-    _queueSignal = completer;
-    return completer.future;
-  }
-
-  /// 播放循环：从队头取一条播一条。和轮询那条完全独立。
-  Future<void> _playbackLoop() async {
-    while (_active) {
-      if (_replyQueue.isEmpty) {
-        await _waitForReply();
-        continue;
-      }
-
-      // 播放测试音时不碰这条线，免得两处一起往同一个 AudioTrack 里推。
-      if (_testToneOn) {
-        await Future<void>.delayed(const Duration(milliseconds: 200));
-        continue;
-      }
-
-      final reply = _replyQueue.removeAt(0);
-
-      // 它已经不在队列里了，先把"上一条"的账清掉：这中间的每一次 await
-      // 都可能是打断点，留着上一条的文字会被算到这一条头上。
-      // [_playReplyAudio] 真跑起来时会重新填上。
-      _replyText = '';
-      _replySpans = const <BrainSpan>[];
-      _replyTotalMs = 0;
-
-      // 用户那一句还没说完。打断是在"开口"那一刻触发的，你一直在说就不会有
-      // 第二次开口事件 —— 这条播下去也没人拦得住，只会盖在人家说话上面。
-      // 整条记成"没听到"，跟下一句一起告诉 brain。
-      if (_shouldDeferForSpeaking()) {
-        _appendUnheard(reply.text);
-        _append('你还在说话，这条先不播（整条算没听到）');
-        continue;
-      }
-
-      try {
-        await _playReplyAudio(reply.audio, reply.spans, reply.text);
-      } catch (e) {
-        // _playReplyAudio 自己会记，这里只是不让整个循环因为一条坏回复死掉。
-        _append('播放失败：$e');
-      }
-    }
-  }
-
-  Future<void> _playReplyAudio(
-    Uint8List encoded,
-    List<BrainSpan> spans,
-    String text,
+  /// 喂一块 Ogg 字节，解出来的 PCM 立刻推下去。
+  Future<void> _feedOgg(
+    _PlayingReply ledger,
+    Uint8List ogg,
+    int epoch,
   ) async {
     final format = _format;
     if (format == null) return;
 
-    // 记下这条的"账"：被打断时靠它把"播到第几毫秒"翻成"哪几句没听到"。
-    // spans 可能为空，那还有 _replyText + _replyTotalMs 这一层兜底。
-    _replySpans = spans;
-    _replyText = text;
+    // 先等原生缓冲降下来。等待期间不读下一块，TCP 自然背压。
+    await _awaitPlaybackRoom(epoch);
+    if (!_active || epoch != _playbackEpoch) return;
 
-    // 基线在**解码之前**就取。放到解码后面的话，解码那几十到几百毫秒里
-    // 被打断，算出来的"已听到"还是上一条的时长，这一整条就会被误判成
-    // "已经听完了" —— 一个字都没播，却报了个空。
-    _replyHeadBaseMs = await _engine.playbackHeadMs();
+    final decoded = await _engine.feedOggStream(ogg);
+    if (decoded == null) return;
+    if (!_active || epoch != _playbackEpoch) return;
 
-    final epoch = _playbackEpoch;
+    await _pushDecoded(ledger, decoded, epoch);
+  }
 
+  /// 流结束：把解码器里最后一点 PCM 收出来。
+  Future<void> _finishOgg(_PlayingReply ledger, int epoch) async {
     try {
-      // 解码在原生做 —— Dart 没有可用的 Opus 解码器
-      final decoded = await _engine.decodeAudio(encoded);
+      final decoded = await _engine.finishOggStream();
+      if (decoded == null) return;
       if (!_active || epoch != _playbackEpoch) return;
-
-      // 注意：不能假设解码出来的采样率等于声明的采样率。
-      // Opus 内部固定跑 48kHz，MediaCodec 通常直接给 48000 ——
-      // 写死 24k 会变速，而且很难查。
-      final pcm = toPlaybackPcm(
-        decoded.pcm16le,
-        sourceRate: decoded.sampleRate,
-        sourceChannels: decoded.channels,
-        targetRate: format.sampleRate,
-      );
-      if (pcm.isEmpty) {
-        _append('解码后没有音频数据');
-        return;
-      }
-
-      // 这条回复的音频总长。brain 没给 spans 时，按比例估位置就靠它。
-      _replyTotalMs = (pcm.length ~/ 2) * 1000 ~/ format.sampleRate;
-
-      _append(
-        '播放 ${(pcm.length / 2 / format.sampleRate).toStringAsFixed(1)}s'
-        '（解码出 ${decoded.sampleRate}Hz/${decoded.channels}ch'
-        '${decoded.sampleRate != format.sampleRate ? " → ${format.sampleRate}Hz" : ""}）',
-      );
-
-      _speaking = true;
-      notifyListeners();
-
-      final bytesPerChunk = format.sampleRate * 2;
-      for (var offset = 0; offset < pcm.length; offset += bytesPerChunk) {
-        if (epoch != _playbackEpoch || !_active) break;
-        final end = (offset + bytesPerChunk).clamp(0, pcm.length);
-        await _engine.pushPlayback(
-          Uint8List.sublistView(pcm, offset, end),
-          epoch: epoch,
-        );
-      }
+      await _pushDecoded(ledger, decoded, epoch);
     } catch (e) {
-      _append('播放失败：$e');
-    } finally {
-      if (epoch == _playbackEpoch) {
-        _speaking = false;
-        notifyListeners();
-      }
+      _append('音频收尾失败：$e');
     }
   }
 
-  // ---------------------------------------------------------------- 清空播放队列
+  /// 把解码后的 PCM 重采样、按 1 秒一块推进原生队列。
+  Future<void> _pushDecoded(
+    _PlayingReply ledger,
+    DecodedAudio decoded,
+    int epoch,
+  ) async {
+    final format = _format;
+    if (format == null) return;
+
+    final pcm = toPlaybackPcm(
+      decoded.pcm16le,
+      sourceRate: decoded.sampleRate,
+      sourceChannels: decoded.channels,
+      targetRate: format.sampleRate,
+    );
+    if (pcm.isEmpty) return;
+
+    if (!ledger.audioStarted) {
+      int? base;
+      if (!_timelineHasAudio) {
+        // 基线在第一次推之前取。播放头被 flush 归零，减掉它才是
+        // "这条时间线里听到了多少"。
+        base = await _engine.playbackHeadMs();
+        // 这个 await 期间完全可能发生打断/清空：epoch 变了就什么都别写，
+        // 否则会把 speaking 又立起来，还会把旧基线塞回新时间线。
+        if (!_active || epoch != _playbackEpoch) return;
+      }
+      ledger.audioStarted = true;
+      ledger.startSample = _timelinePushedSamples;
+      if (base != null) {
+        _timelineBaseHeadMs = base;
+        _timelineHasAudio = true;
+      }
+      _speaking = true;
+      notifyListeners();
+    }
+
+    final bytesPerChunk = format.sampleRate * 2;
+    for (var offset = 0; offset < pcm.length; offset += bytesPerChunk) {
+      if (!_active || epoch != _playbackEpoch) return;
+      final end = (offset + bytesPerChunk).clamp(0, pcm.length);
+      await _engine.pushPlayback(
+        Uint8List.sublistView(pcm, offset, end),
+        epoch: epoch,
+      );
+      // 等推送的这段时间里可能已经被打断/清空：那块 PCM 会被 flush 丢掉，
+      // 不能再记进采样数，否则新时间线的起点会被旧账污染。
+      if (!_active || epoch != _playbackEpoch) return;
+      final pushed = (end - offset) ~/ 2;
+      ledger.pushedSamples += pushed;
+      _timelinePushedSamples += pushed;
+    }
+  }
+
+  void _addToTimeline(_PlayingReply ledger) {
+    if (ledger.inTimeline) return;
+    ledger.inTimeline = true;
+    _timeline.add(ledger);
+  }
+
+  void _removeFromTimeline(_PlayingReply ledger) {
+    if (!ledger.inTimeline) return;
+    ledger.inTimeline = false;
+    _timeline.remove(ledger);
+  }
+
+  /// 原生播放队列里提前压的音频太多时等一等。
+  ///
+  /// 等待可被打断：epoch 一变（barge-in/清空/切档案）立刻退出。
+  Future<void> _awaitPlaybackRoom(int epoch) async {
+    final format = _format;
+    if (format == null) return;
+    final maxFrames = format.sampleRate * maxQueuedPlaybackMs ~/ 1000;
+    while (_active && epoch == _playbackEpoch) {
+      final backlog = await _engine.playbackBacklogFrames();
+      if (backlog <= maxFrames) return;
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
+  }
+
+  void _resetTimeline() {
+    _timeline.clear();
+    _timelinePushedSamples = 0;
+    _timelineBaseHeadMs = 0;
+    _timelineHasAudio = false;
+  }
+
+  // ---------------------------------------------------------------- 清空 / 打断
 
   /// 手动清空 AI 语音。只清音频，会话继续。
   ///
@@ -1278,22 +1391,40 @@ class ConversationController extends ChangeNotifier {
   /// 或前台的音量减键（后台收不到，由通知按钮补上）。
   Future<void> clearPlayback() async {
     if (!_active) return;
-    if (!_speaking &&
-        _replyQueue.isEmpty &&
+    if (_activeReply == null &&
+        !_speaking &&
         await _engine.playbackBacklogFrames() == 0) {
       _append('当前没有在播放');
       return;
     }
-    final heard = await _heardMs();
-    final (discarded, queued) = await _interruptPlayback();
-    _recordHeard(heard, discarded, queued, '已清空 AI 语音');
+    // 通知栏「停止说话」、音量减键都是打断：打断之前排队的消息不要再送。
+    // 账记在**打断开始时**聚焦的那个档案头上：下面有 await，期间焦点可能
+    // 被切走，读"当前聚焦"会把旧档案没听完的话记到新档案头上。
+    final owner = focused;
+    owner?.markInterrupted();
+    final account = await _beginInterrupt();
+    _recordHeard(
+      account.heardMs,
+      account.discarded,
+      account.unheardText,
+      '已清空 AI 语音',
+      target: owner,
+    );
   }
 
   /// 用户开口打断。和手动清空是同一件事，只是触发源不同。
   Future<void> _interruptAndReport() async {
-    final heard = await _heardMs();
-    final (discarded, queued) = await _interruptPlayback();
-    _recordHeard(heard, discarded, queued, '打断');
+    // 开口盖过 AI：打断之前排队的消息不要再送。
+    final owner = focused;
+    owner?.markInterrupted();
+    final account = await _beginInterrupt();
+    _recordHeard(
+      account.heardMs,
+      account.discarded,
+      account.unheardText,
+      '打断',
+      target: owner,
+    );
   }
 
   /// 记下"上一段只听到这么多"，等下一次上传时带给 brain。
@@ -1303,8 +1434,9 @@ class ConversationController extends ChangeNotifier {
   void _recordHeard(
     int heardMs,
     int discarded,
-    String queuedText,
+    String? unheardText,
     String why, {
+
     /// 这笔账记在谁头上。**默认是此刻聚焦的那个**，但切换/关档案那条路上
     /// 有 await，中途焦点可能已经变了 —— 那就得显式传"声音本来属于谁"，
     /// 不然旧档案没听完的话会被记到新档案头上。
@@ -1312,33 +1444,18 @@ class ConversationController extends ChangeNotifier {
   }) {
     final to = target ?? focused;
     to?.pendingHeardMs = heardMs;
+    _appendUnheard(unheardText, to);
 
-    // 就是用户给的那个式子：
-    //   被打断的那条没听完的尾巴 ++ 队列里还没轮到播的整条正文
-    _appendUnheard(_unheardFrom(heardMs), to);
-    _appendUnheard(queuedText, to);
-
-    // 这条的账已经算过了，清掉 —— 不然紧接着再来一次打断（比如通知栏
-    // 又按一下）会把同一段文字重复算一遍。
-    _replyText = '';
-    _replySpans = const <BrainSpan>[];
-    _replyTotalMs = 0;
-
-    _append('$why（丢弃 $discarded 帧，已听到 ${(heardMs / 1000).toStringAsFixed(1)}s）'
-        '—— 下次上传时告诉 brain');
+    _append(
+      '$why（丢弃 $discarded 帧，已听到 ${(heardMs / 1000).toStringAsFixed(1)}s）'
+      '—— 下次上传时告诉 brain',
+    );
   }
 
   /// 往"没听到的文字"里追加一段。
   ///
-  /// 这个量是**累加**的：
-  ///
-  /// ```
-  /// unheard_text = 正在播的那条没听完的尾巴
-  ///              ++ 队列里还没轮到播的整条正文
-  /// ```
-  ///
-  /// 累加而不是覆盖：一次打断只处理到当时的队列，之后队列还会再进东西
-  /// （取的那条线一直在跑），那些也得算上，直到下一次上传成功才清。
+  /// 这个量是**累加**的：一次打断只处理到当时已经入站的音频，之后队列
+  /// 还会再进东西，那些也得算上，直到下一次上传成功才清。
   ///
   /// 账记在**聚焦档案**头上。切档案时先结账再切，所以这些字会正确地
   /// 报给说这些话的那个 brain，不会串到别的档案去。
@@ -1350,8 +1467,7 @@ class ConversationController extends ChangeNotifier {
   ///
   /// **改焦点不止"滑动切换"一条路**：关掉正在聚焦的档案、把它删掉，
   /// `normalized()` 也会把焦点挪到别人身上。不在这一个地方收口的话，
-  /// 那条路上声音会接着响（队列里还压着它的回复），而"没听完的那几句"
-  /// 会被记到**新**档案头上 —— 下次跟新档案说话，旧档案的漏听文本就报给它了。
+  /// 那条路上声音会接着响，而"没听完的那几句"会被记到**新**档案头上。
   Future<void> _settleBeforeLeavingFocus() async {
     // 结账对象**进函数时就钉死**：下面有 await，中途焦点可能被改掉。
     final leaving = focused;
@@ -1373,116 +1489,279 @@ class ConversationController extends ChangeNotifier {
     }
 
     if (!_active) {
-      // 没在会话里，播放循环本来就没跑。但还是要抬 epoch —— 万一有在途的
-      // 解码/推送，它会看到 epoch 变了而自己退出去。
+      // 没在会话里。但还是要抬 epoch —— 万一有在途的解码/推送，
+      // 它会看到 epoch 变了而自己退出去；在途的流也要主动断掉。
       _playbackEpoch++;
-      _replyQueue.clear();
+      await _activeReply?.cancel();
+      _activeReply = null;
+      _resetTimeline();
       return;
     }
 
     final wasAudible = speaking;
-    final heard = wasAudible ? await _heardMs() : 0;
-    final (discarded, queued) = await _interruptPlayback();
-    if (!wasAudible) return;
+    final account = await _beginInterrupt();
 
-    _recordHeard(heard, discarded, queued, '切换档案，停掉正在播的语音',
-        target: leaving);
-    // 用户切回来会看到文字却想不起当时没听完，留一行痕。
-    // 只在真的打断了声音时才留，光切来切去不写。
-    if (_config.focusedProfileId == leaving.id) {
-      _addMessage(MessageRole.note, '切走的时候这条没播完');
-    }
-  }
-
-  /// 把"播到第几毫秒"翻成"哪几个字没被听到"。
-  ///
-  /// 两层：brain 给了按句的时间账就用它（精确）；没给就按比例估。
-  /// **一句只要没被完整听完，整句都算没听到** —— 半句话比整句更容易
-  /// 让人误以为听全了。
-  String? _unheardFrom(int heardMs) {
-    if (_replyText.isEmpty) return null;
-
-    if (_replySpans.isNotEmpty) {
-      final buf = StringBuffer();
-      var acc = 0;
-      for (final span in _replySpans) {
-        acc += span.ms;
-        if (acc > heardMs) buf.write(span.text);
+    if (wasAudible) {
+      _recordHeard(
+        account.heardMs,
+        account.discarded,
+        account.unheardText,
+        '切换档案，停掉正在播的语音',
+        target: leaving,
+      );
+      // 用户切回来会看到文字却想不起当时没听完，留一行痕。
+      // 只在真的打断了声音时才留，光切来切去不写。
+      if (_config.focusedProfileId == leaving.id) {
+        _addMessage(MessageRole.note, '切走的时候这条没播完');
       }
-      final unheard = buf.toString().trim();
-      return unheard.isEmpty ? null : unheard;
+      return;
     }
 
-    return _unheardByEstimate(heardMs);
+    // 没有声音可停，但文字可能已经到了、音频还没到（或者整条只有文本）。
+    // 这些字用户同样没听到，不能因为 speaking 是 false 就丢掉。
+    final unheard = account.unheardText?.trim();
+    if (unheard == null || unheard.isEmpty) return;
+    _appendUnheard(unheard, leaving);
+    _append('切档案：有一段只有文字、没听到 —— 下次上传时告诉 brain');
   }
 
-  /// 按比例估：假设"文字长短和音频时长成正比"。
+  /// 把按比例估出来的字符位置换算成"第一个没听到的字"。
   ///
-  /// 长回复里这个假设站得住（语速大体均匀），但标点停顿、数字、英文词、
-  /// 尾巴上的静音都会把它带偏。所以只当 spring back：估出来的位置**往后
-  /// 找最近的句子边界再切**，不把句子从中间劈开。宁可多报一句，
-  /// 也不要让用户漏听半句却以为听全了。
-  String? _unheardByEstimate(int heardMs) {
-    if (_replyTotalMs <= 0) return null;
-
-    final chars = _replyText.length;
-    final guess = (chars * heardMs / _replyTotalMs).round();
-
-    final cut = _boundaryAtOrAfter(guess);
-    if (cut >= chars) return null;
-
-    final unheard = _replyText.substring(cut).trim();
-    return unheard.isEmpty ? null : unheard;
+  /// 落在一句中间时往后找到下一处断句点 —— 保守起见，把这句当成已经
+  /// 听到。但**正好落在句首**时不能再往后吞：一秒音频刚好切在
+  /// `第二句。` 开头时，这一句一个采样都没响过，必须算没听到。
+  int _unheardStart(int guess, String text) {
+    final at = guess.clamp(0, text.length);
+    if (at == 0) return 0;
+    if (at >= text.length) return text.length;
+    if (_isAtSentenceStart(at, text)) return at;
+    return _boundaryAtOrAfter(at, text);
   }
 
-  /// 从 [from] 起的第一处断句点（返回它**后面**一位）。找不到就原样返回。
-  int _boundaryAtOrAfter(int from) {
-    for (var i = from.clamp(0, _replyText.length);
-        i < _replyText.length;
-        i++) {
-      if (_sentenceBreaks.contains(_replyText[i])) return i + 1;
+  /// [at] 是不是正好落在句首。英文句子后面有空格，只看前一个字符会漏掉。
+  bool _isAtSentenceStart(int at, String text) {
+    var i = at - 1;
+    while (i >= 0 && text[i].trim().isEmpty) {
+      i--;
+    }
+    return i >= 0 && _sentenceBreaks.contains(text[i]);
+  }
+
+  /// 从 [from] 起的第一处断句点（返回它**后面**一位，跳过空白）。
+  /// 找不到就原样返回。
+  int _boundaryAtOrAfter(int from, String text) {
+    for (var i = from.clamp(0, text.length); i < text.length; i++) {
+      if (_sentenceBreaks.contains(text[i])) return _skipSpaces(i + 1, text);
     }
     return from;
   }
 
-  /// 这条回复**已经播出去**多少毫秒。
-  ///
-  /// 问原生要播放头，再减掉开播时的基线。不能拿"推下去了多少"代替：
-  /// 推下去的还堆在缓冲区里，那部分用户根本还没听到。
-  Future<int> _heardMs() async {
-    try {
-      final heard = await _engine.playbackHeadMs() - _replyHeadBaseMs;
-      return heard < 0 ? 0 : heard;
-    } catch (_) {
-      // 拿不到就当 0（"一句都没听到"）。宁可少报，也不要编一个假位置给 brain。
-      return 0;
+  int _skipSpaces(int from, String text) {
+    var i = from;
+    while (i < text.length && text[i].trim().isEmpty) {
+      i++;
     }
+    return i;
   }
 
-  /// 作废当前正在播放的音频。
+  /// 最后一句的开头。流还没结束、又估不出切点时的兜底：至少把最后一句
+  /// 算成没听到，宁可多报也不要漏报。
+  int _lastSentenceStart(String text) {
+    var end = text.length - 1;
+    while (end >= 0 && text[end].trim().isEmpty) {
+      end--;
+    }
+    for (var i = end - 1; i >= 0; i--) {
+      if (_sentenceBreaks.contains(text[i])) {
+        final start = _skipSpaces(i + 1, text);
+        return start <= end ? start : 0;
+      }
+    }
+    return 0;
+  }
+
+  /// 作废当前正在播放的音频，并取消在途的流。
   ///
-  /// **取的那条线不动** —— 协议里没有取消端点，音频字节早就到了，
-  /// 而且接着问下一条正是我们要的。这里只把**还没播出去的**丢掉：
-  /// 正在播的那条靠抬 epoch 作废，队列里还没轮到的那几条直接清掉，
-  /// 并把它们的正文一并交出去（它们同样没进用户耳朵）。
-  ///
-  /// 返回 (丢弃的帧数, 队列里被清掉的那些正文)。
-  Future<(int, String)> _interruptPlayback() async {
-    _playbackEpoch++;
+  /// 返回被打断那一刻算好的账；调用方决定记到哪个档案头上。
+  Future<_InterruptAccount> _beginInterrupt() async {
+    final epoch = ++_playbackEpoch;
     _speaking = false;
 
-    final queued = StringBuffer();
-    for (final pending in _replyQueue) {
-      queued.write(pending.text);
-    }
-    if (_replyQueue.isNotEmpty) {
-      _append('清掉队列里 ${_replyQueue.length} 条还没播的（整条算没听到）');
-      _replyQueue.clear();
+    // 先抬 epoch 再取消流：所有 _pushOggFrame 都会在 await 之后重新校验，
+    // 不会再有新音频越过 flush 冒出来。
+    final stream = _activeReply;
+    _activeReply = null;
+    final cancelFuture = stream?.cancel();
+
+    int headMs = 0;
+    if (_timelineHasAudio) {
+      try {
+        headMs = await _engine.playbackHeadMs();
+      } catch (_) {
+        // 拿不到就按 0 算：宁可少报，也不要编一个假位置给 brain。
+      }
     }
 
-    final discarded = await _engine.flushPlayback(newEpoch: _playbackEpoch);
+    final account = _accountTimeline(headMs);
+
+    final discarded = await _engine.flushPlayback(newEpoch: epoch);
+    _resetTimeline();
     notifyListeners();
-    return (discarded, queued.toString());
+
+    await cancelFuture;
+    return _InterruptAccount(
+      heardMs: account.heardMs,
+      unheardText: account.unheardText,
+      discarded: discarded,
+    );
+  }
+
+  /// 把播放头位置映射成"正在响的那条回复听到了哪里、后面哪些文字没听到"。
+  ///
+  /// 时间线是按推送顺序累加的采样位置。原生 FIFO 保证顺序，所以
+  /// `播放头 - 基线` 可以直接和 `startSample + pushedSamples` 比较。
+  ///
+  /// 新协议没有句子表，切点只能按比例估：听到的采样数 / 已经推下去的
+  /// 采样数，乘到 `spoken`（剥过 disable voice 的原文）上，再往后找最近
+  /// 的断句点。估得不一定精确，但方向对：宁可多报"没听到"，也不要让
+  /// brain 以为用户听过它没听到的话。
+  _InterruptAccount _accountTimeline(int headMs) {
+    final rate = _format?.sampleRate ?? 16000;
+    final heardSamples = _timelineHasAudio
+        ? (((headMs - _timelineBaseHeadMs).clamp(0, 1 << 30)) * rate ~/ 1000)
+        : 0;
+
+    _PlayingReply? audible;
+    var audibleHeard = 0;
+
+    for (final ledger in _timeline) {
+      // pushedSamples == 0：这一条已经入站但还没解/没推进原生队列，
+      // 它一个采样都没响过，整条都算没听到。
+      if (ledger.pushedSamples == 0) continue;
+      if (heardSamples < ledger.startSample + ledger.pushedSamples) {
+        audible = ledger;
+        audibleHeard = (heardSamples - ledger.startSample).clamp(
+          0,
+          ledger.pushedSamples,
+        );
+        break;
+      }
+    }
+
+    // 播放头已经越过所有已推送的音频：最后一条有音频的回复整条听完了。
+    if (audible == null) {
+      for (final ledger in _timeline.reversed) {
+        if (ledger.pushedSamples > 0) {
+          audible = ledger;
+          audibleHeard = ledger.pushedSamples;
+          break;
+        }
+      }
+    }
+
+    if (audible == null) {
+      // 一块音频都没推下去：文字已经到了、声音还没到（或者整条只有文本）。
+      // 整条都没听到，必须把文字带回去。
+      final out = StringBuffer();
+      for (final ledger in _timeline) {
+        out.write(ledger.spoken);
+      }
+      final elapsed = _timelineHasAudio
+          ? ((headMs - _timelineBaseHeadMs).clamp(0, 1 << 30))
+          : 0;
+      final unheard = out.toString().trim();
+      return _InterruptAccount(
+        heardMs: elapsed,
+        unheardText: unheard.isEmpty ? null : unheard,
+        discarded: 0,
+      );
+    }
+
+    final out = StringBuffer();
+    var include = false;
+    for (final ledger in _timeline) {
+      if (ledger.pushedSamples == 0) {
+        // 文字已经到了、音频还没开始：整条没听到。
+        // **不能按顺序跳过**：它可能排在正在播的那条前面。
+        out.write(ledger.spoken);
+        continue;
+      }
+      if (!include && !identical(ledger, audible)) continue;
+
+      if (identical(ledger, audible)) {
+        _appendUnheardOfLedger(out, ledger, audibleHeard);
+        include = true;
+        continue;
+      }
+
+      // 后面已经入站的回复：整条算没听到。
+      out.write(ledger.spoken);
+    }
+
+    final unheard = out.toString().trim();
+    return _InterruptAccount(
+      heardMs: audibleHeard * 1000 ~/ rate,
+      unheardText: unheard.isEmpty ? null : unheard,
+      discarded: 0,
+    );
+  }
+
+  /// 当前这条回复里，从 [heardSamples] 往后还没听到的文本。
+  ///
+  /// 按"听到采样 / 已推采样"的比例估切点，再往后找最近的断句点。
+  void _appendUnheardOfLedger(
+    StringBuffer out,
+    _PlayingReply ledger,
+    int heardSamples,
+  ) {
+    final spoken = ledger.spoken;
+    if (spoken.isEmpty) return;
+
+    final total = ledger.pushedSamples;
+    if (total <= 0) {
+      out.write(spoken);
+      return;
+    }
+
+    final heard = heardSamples.clamp(0, total);
+    if (heard >= total) {
+      if (ledger.ended) return; // 整条听完了
+      // 流还没结束：播放头追上了"已经推下去的采样"，但后面的音频服务端
+      // 还没合成出来，用户肯定没听到。估不出准确切点，保守地从最后一句
+      // 开头算没听到。
+      final cut = _lastSentenceStart(spoken);
+      if (cut < spoken.length) out.write(spoken.substring(cut));
+      return;
+    }
+
+    final guess = (spoken.length * heard / total).round();
+    // 流还没结束：后面还有多久的音频、对应多少字，客户端根本不知道。
+    // 按已推采样估出来的位置只能当上限 —— 往前收到句首，宁可多报没听到。
+    final cut = ledger.ended
+        ? _unheardStart(guess, spoken)
+        : _unheardStartWhileStreaming(guess, spoken);
+    if (cut < spoken.length) out.write(spoken.substring(cut));
+  }
+
+  /// 流没结束时的保守切点：往回找到当前这句的开头。
+  ///
+  /// 例如听到的比例估到第三句中间，就整句都算没听到；正好落在句首
+  /// （前一个字是断句点）时它本来就还没响过，原样返回。
+  int _unheardStartWhileStreaming(int guess, String text) {
+    final at = guess.clamp(0, text.length);
+    if (at == 0) return 0;
+    if (at >= text.length) return text.length;
+    if (_isAtSentenceStart(at, text)) return at;
+    for (var i = at - 1; i >= 0; i--) {
+      if (_sentenceBreaks.contains(text[i])) return _skipSpaces(i + 1, text);
+    }
+    return 0;
+  }
+
+  /// 停掉当前声音，不记账。测试音和重启音频用。
+  Future<int> _interruptPlayback() async {
+    final account = await _beginInterrupt();
+    return account.discarded;
   }
 
   // ---------------------------------------------------------------- 引擎事件
@@ -1539,7 +1818,9 @@ class ConversationController extends ChangeNotifier {
   }
 
   Future<void> _restartAudio() async {
-    if (_speaking) await _interruptPlayback();
+    // 用 speaking（含原生缓冲里还没响完的帧），不能只看 Dart 侧的推送
+    // 循环：body 结束了、尾巴还在响的时候也要先停掉再重建 AudioTrack。
+    if (speaking) await _interruptPlayback();
 
     await _micSub?.cancel();
     _micSub = null;
@@ -1624,6 +1905,24 @@ class ConversationController extends ChangeNotifier {
     }
 
     _testToneOn = true;
+
+    // 测试音和 TTS 都推进同一个 AudioTrack。混在一起既毁掉 AEC 判断，
+    // 也会让播放头对不上时间线。先把正在播的回复停掉、把账结清。
+    //
+    // **没有声音可停时不要 flush。** 空白状态下 flush 会把 epoch 抬掉，
+    // 看起来就像"刚刚打断了一次"，测试和状态都被污染。
+    if (_activeReply != null || _timelineHasAudio) {
+      final account = await _beginInterrupt();
+      if (account.heardMs > 0 || (account.unheardText?.isNotEmpty ?? false)) {
+        _recordHeard(
+          account.heardMs,
+          account.discarded,
+          account.unheardText,
+          '播放测试音，停掉 AI 语音',
+        );
+      }
+    }
+
     _append('播放测试音（AEC 自测）—— 看麦克风电平条是否接近静默');
     notifyListeners();
     unawaited(_playTestToneLoop());
@@ -1635,11 +1934,17 @@ class ConversationController extends ChangeNotifier {
 
     final epoch = _playbackEpoch;
     _speaking = true;
-    _replyHeadBaseMs = await _engine.playbackHeadMs();
+    _resetTimeline();
+    _timelineHasAudio = true;
+    final base = await _engine.playbackHeadMs();
+    if (!_active || !_testToneOn || epoch != _playbackEpoch) {
+      _testToneOn = false;
+      if (epoch == _playbackEpoch) _speaking = false;
+      notifyListeners();
+      return;
+    }
+    _timelineBaseHeadMs = base;
     // 测试音不是 brain 说的，没有"哪句话没听到"可言
-    _replySpans = const <BrainSpan>[];
-    _replyText = '';
-    _replyTotalMs = 0;
     notifyListeners();
 
     const burstMs = 2000;
@@ -1670,6 +1975,9 @@ class ConversationController extends ChangeNotifier {
 
   Future<void> _teardown() async {
     _active = false;
+    // 让所有在途的解码/推送立刻作废。不能等它们自己回来 —— 它们可能
+    // 正卡在不可取消的原生调用里，而用户马上就要重新开始。
+    _playbackEpoch++;
 
     // 立刻掐掉所有在途的请求。
     // 尤其是那些长轮询 —— 服务端的 handler 接了 AbortSignal，
@@ -1682,14 +1990,10 @@ class ConversationController extends ChangeNotifier {
     _statsTimer?.cancel();
     _statsTimer = null;
 
-    // 叫醒播放循环让它看到 _active 已经翻了，再把队列放掉。
-    // 不放的话它挂在 _waitForReply() 上，这个 Future 永远不回来。
-    _replyQueue.clear();
-    final signal = _queueSignal;
-    _queueSignal = null;
-    signal?.complete();
-    await _playbackTask;
-    _playbackTask = null;
+    // 停掉还在消费的回复流，并作废时间线。
+    await _activeReply?.cancel();
+    _activeReply = null;
+    _resetTimeline();
 
     await _micSub?.cancel();
     _micSub = null;
@@ -1718,9 +2022,6 @@ class ConversationController extends ChangeNotifier {
       _flushMuteTrace();
     }
     _mutedMs = 0;
-    _replySpans = const <BrainSpan>[];
-    _replyText = '';
-    _replyTotalMs = 0;
 
     // 「没听到」那两笔账**故意不清**：它是"下一句要带给 brain 的上下文"，
     // 会话结束不等于这件事没发生过。下次接着说话时照样会带过去。
@@ -1741,6 +2042,13 @@ class ConversationController extends ChangeNotifier {
     try {
       _droppedMicFrames = await _engine.droppedMicFrames();
       _backlogFrames = await _engine.playbackBacklogFrames();
+
+      // 没有在途流、也没有排队的声音：上一条时间线已经彻底放完，
+      // 清掉它并等下一次开播时重新取播放头基线。
+      if (_activeReply == null && !_speaking && _backlogFrames == 0) {
+        _resetTimeline();
+      }
+
       notifyListeners();
     } catch (_) {
       // 会话正在收尾时查询会失败，忽略
@@ -1791,10 +2099,13 @@ class ConversationController extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _active = false;
+    // 抬 epoch：在途的回复处理从 await 回来后会看到时间线已换，
+    // 不会再走 notifyListeners（dispose 之后那是非法的）。
+    _playbackEpoch++;
     _statsTimer?.cancel();
-    // 别让播放循环挂在没人叫醒的 Future 上
-    _queueSignal?.complete();
-    _queueSignal = null;
+    unawaited(_activeReply?.cancel());
+    _activeReply = null;
+    _resetTimeline();
     _speakQueue?.dispose();
     _segmenter?.dispose();
     _cancelAudioSubscriptions();

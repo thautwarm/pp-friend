@@ -236,5 +236,6 @@
   "silent": "静默",
   "orbStart": "开始对话",
   "orbStarting": "正在启动",
-  "orbEnd": "结束对话"
+  "orbEnd": "结束对话",
+  "jumpToBottom": "回到底部"
 }

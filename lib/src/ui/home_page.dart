@@ -45,6 +45,12 @@ class _HomePageState extends State<HomePage> {
   /// 否则"用户正在往上翻，后台档案来了条消息"就会把人弹回去。
   bool _loadingEarlier = false;
 
+  /// 用户翻得离底部够远了，要不要显示"回到底部"按钮。
+  ///
+  /// 只在 [ScrollController] 的监听里更新，而且**只在真假变化时**
+  /// setState：滚动每帧都会回调，无脑 setState 会让整页跟着滚。
+  bool _showJumpToBottom = false;
+
   /// 离顶部多近就去加载更早的。
   static const double _loadEarlierThreshold = 200;
 
@@ -73,10 +79,31 @@ class _HomePageState extends State<HomePage> {
 
   void _onScroll() {
     if (!_scroll.hasClients) return;
+
+    final position = _scroll.position;
+    final away =
+        (position.maxScrollExtent - position.pixels) > _stickToBottomThreshold;
+    if (away != _showJumpToBottom) {
+      setState(() => _showJumpToBottom = away);
+    }
+
     if (_loadingEarlier) return;
-    if (_scroll.position.pixels > _loadEarlierThreshold) return;
+    if (position.pixels > _loadEarlierThreshold) return;
     if (!widget.controller.hasMoreBefore) return;
     unawaited(_loadEarlier());
+  }
+
+  /// 一次跳到最新那条消息。
+  ///
+  /// 用 animateTo 而不是 jumpTo：从很远的地方瞬间跳过去会让人分不清
+  /// 自己是被带到了底部还是整屏换了一页。240ms 足够看清方向。
+  void _jumpToBottom() {
+    if (!_scroll.hasClients) return;
+    _scroll.animateTo(
+      _scroll.position.maxScrollExtent,
+      duration: const Duration(milliseconds: 240),
+      curve: Curves.easeOut,
+    );
   }
 
   /// 往上翻一页，并且**把滚动位置补回来**。
@@ -235,7 +262,7 @@ class _HomePageState extends State<HomePage> {
                 const SizedBox(height: 6),
                 _headline(context),
                 const SizedBox(height: 12),
-                Expanded(child: _messageStream(context)),
+                Expanded(child: _messageStreamWithJump(context)),
               ],
             ),
           ),
@@ -354,6 +381,37 @@ class _HomePageState extends State<HomePage> {
               : ObjectKey(message),
         );
       },
+    );
+  }
+
+  /// 消息流 + 右下角"回到底部"。
+  ///
+  /// 按钮压在列表上而不是占一行高度：它出现的时候正好是用户不在乎
+  /// 最后一条消息被挡住一点的时候；贴在列表下面会永久吃掉一行空间。
+  Widget _messageStreamWithJump(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final show =
+        _showJumpToBottom && widget.controller.messages.isNotEmpty;
+
+    return Stack(
+      children: [
+        Positioned.fill(child: _messageStream(context)),
+        Positioned(
+          right: 16,
+          bottom: 12,
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 160),
+            child: show
+                ? IconButton.filledTonal(
+                    key: const ValueKey('jump-to-bottom'),
+                    tooltip: l10n.jumpToBottom,
+                    onPressed: _jumpToBottom,
+                    icon: const Icon(Icons.keyboard_double_arrow_down_rounded),
+                  )
+                : const SizedBox.shrink(),
+          ),
+        ),
+      ],
     );
   }
 

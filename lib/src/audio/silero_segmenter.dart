@@ -119,17 +119,18 @@ class SileroSegmenter implements Segmenter {
 
     if (onFiltered != null) {
       for (final s in result.filtered) {
-        onFiltered(FilteredSegment(
-          startMs: s.startMs,
-          endMs: s.endMs,
-          durationMs: s.durationMs,
-          pvadScore: s.pvadScore,
-          pvadTargetRatio: s.pvadTargetRatio,
-          speakerCos: s.speakerCos,
-        ));
+        onFiltered(
+          FilteredSegment(
+            startMs: s.startMs,
+            endMs: s.endMs,
+            durationMs: s.durationMs,
+            pvadScore: s.pvadScore,
+            pvadTargetRatio: s.pvadTargetRatio,
+            speakerCos: s.speakerCos,
+          ),
+        );
       }
     }
-
   }
 
   @override
@@ -152,8 +153,10 @@ class SileroSegmenter implements Segmenter {
       // 持有权重了，再把字节留一份在 Dart 堆里只是白占 81 MiB。
       // 每次挂门控重读一次资产，换来的是一次会话只多几百毫秒启动时间。
       final data = await rootBundle.load('assets/models/ecapa.onnx');
-      final ecapa =
-          data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+      final ecapa = data.buffer.asUint8List(
+        data.offsetInBytes,
+        data.lengthInBytes,
+      );
       _handle.setSpeakerVerifier(
         model: ecapa,
         spkemb: spkemb,

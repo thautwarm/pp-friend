@@ -41,10 +41,9 @@ void main() {
       {"brain": {"baseUrl": "u", "brainId": "b", "token": "t"}}
       ''';
 
-      Map<String, dynamic> roundTrip(Map<String, dynamic> json) =>
-          (jsonDecode(jsonEncode(AssistantConfig.fromJson(json).toJson()))
-                  as Map)
-              .cast<String, dynamic>();
+      Map<String, dynamic> roundTrip(Map<String, dynamic> json) => (jsonDecode(
+        jsonEncode(AssistantConfig.fromJson(json).toJson()),
+      ) as Map).cast<String, dynamic>();
 
       final once = roundTrip(
         (jsonDecode(legacy) as Map).cast<String, dynamic>(),
@@ -52,8 +51,10 @@ void main() {
       final twice = roundTrip(once);
 
       expect(jsonEncode(twice), jsonEncode(once));
-      expect(AssistantConfig.fromJson(twice).focusedProfile!.id,
-          AssistantConfig.defaultProfileId);
+      expect(
+        AssistantConfig.fromJson(twice).focusedProfile!.id,
+        AssistantConfig.defaultProfileId,
+      );
     });
 
     test('新版本照样写出 brain 键，回退到旧 APK 不会清空配置', () {
@@ -63,14 +64,16 @@ void main() {
             id: 'p_1',
             brain: BrainConfig(baseUrl: 'http://新地址', brainId: '新名字'),
           ),
-          Profile(id: 'p_2', brain: BrainConfig(baseUrl: 'http://别的')),
+          Profile(
+            id: 'p_2',
+            brain: BrainConfig(baseUrl: 'http://别的'),
+          ),
         ],
         focusedProfileId: 'p_2',
       );
 
       final json = config.toJson();
-      final legacyBrain =
-          (json['brain'] as Map).cast<String, dynamic>();
+      final legacyBrain = (json['brain'] as Map).cast<String, dynamic>();
 
       // 旧代码只读 json['brain']，拿到的必须是当前聚焦那个档案的配置
       expect(legacyBrain['baseUrl'], 'http://别的');
@@ -129,24 +132,39 @@ void main() {
       expect(normalized.profiles, hasLength(1));
       expect(normalized.brain.isUsable, isFalse);
       // 归一化之后是幂等的：再归一次还是同一个档案，不会又换一个 id
-      expect(normalized.normalized().focusedProfile!.id,
-          normalized.focusedProfile!.id);
+      expect(
+        normalized.normalized().focusedProfile!.id,
+        normalized.focusedProfile!.id,
+      );
     });
   });
 
   group('档案增删改', () {
     const twoProfiles = AssistantConfig(
       profiles: [
-        Profile(id: 'p_1', name: '一号', brain: BrainConfig(brainId: 'a')),
-        Profile(id: 'p_2', name: '二号', brain: BrainConfig(brainId: 'b')),
-        Profile(id: 'p_3', name: '三号', brain: BrainConfig(brainId: 'c')),
+        Profile(
+          id: 'p_1',
+          name: '一号',
+          brain: BrainConfig(brainId: 'a'),
+        ),
+        Profile(
+          id: 'p_2',
+          name: '二号',
+          brain: BrainConfig(brainId: 'b'),
+        ),
+        Profile(
+          id: 'p_3',
+          name: '三号',
+          brain: BrainConfig(brainId: 'c'),
+        ),
       ],
       focusedProfileId: 'p_2',
     );
 
     test('withProfile 改已有的那一项，不动别人', () {
-      final updated = twoProfiles
-          .withProfile(const Profile(id: 'p_2', name: '改过的'));
+      final updated = twoProfiles.withProfile(
+        const Profile(id: 'p_2', name: '改过的'),
+      );
       expect(updated.profiles.map((p) => p.name), ['一号', '改过的', '三号']);
       expect(updated.profiles.map((p) => p.id), ['p_1', 'p_2', 'p_3']);
     });
@@ -203,13 +221,17 @@ void main() {
         focusedProfileId: AssistantConfig.defaultProfileId,
       );
 
-      final afterDelete =
-          migrated.withoutProfile(AssistantConfig.defaultProfileId);
+      final afterDelete = migrated.withoutProfile(
+        AssistantConfig.defaultProfileId,
+      );
       expect(afterDelete.profiles, isEmpty);
 
       final revived = afterDelete.normalized().focusedProfile!;
-      expect(revived.id, isNot(AssistantConfig.defaultProfileId),
-          reason: 'history/default/ 还在盘上，同 id 就等于把删除撤销了');
+      expect(
+        revived.id,
+        isNot(AssistantConfig.defaultProfileId),
+        reason: 'history/default/ 还在盘上，同 id 就等于把删除撤销了',
+      );
       expect(revived.brain.isUsable, isFalse);
     });
 
@@ -233,8 +255,10 @@ void main() {
 
       final normalized = allClosed.normalized();
       expect(normalized.focusedProfile!.id, 'p_1');
-      expect(normalized.focusedProfile!.stateIn(normalized.focusedProfileId),
-          ProfileState.closed);
+      expect(
+        normalized.focusedProfile!.stateIn(normalized.focusedProfileId),
+        ProfileState.closed,
+      );
     });
 
     test('copyWith(brain:) 写到聚焦的那个档案上', () {
@@ -266,12 +290,18 @@ void main() {
 
     test('显示名三级回退', () {
       expect(
-        const Profile(id: 'p', name: '起过名字', brain: BrainConfig(brainId: 'b'))
-            .displayName,
+        const Profile(
+          id: 'p',
+          name: '起过名字',
+          brain: BrainConfig(brainId: 'b'),
+        ).displayName,
         '起过名字',
       );
       expect(
-        const Profile(id: 'p', brain: BrainConfig(brainId: 'b')).displayName,
+        const Profile(
+          id: 'p',
+          brain: BrainConfig(brainId: 'b'),
+        ).displayName,
         'b',
       );
       expect(const Profile(id: 'p').displayName, '未命名');
@@ -309,7 +339,10 @@ void main() {
       expect(back.avatarFile, 'p_1.png');
       expect(back.enabled, isFalse);
 
-      expect(const Profile(id: 'p').toJson().containsKey('avatarFile'), isFalse);
+      expect(
+        const Profile(id: 'p').toJson().containsKey('avatarFile'),
+        isFalse,
+      );
     });
 
     test('clearAvatar 能把头像摘掉', () {

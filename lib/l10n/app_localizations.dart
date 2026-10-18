@@ -1131,6 +1131,12 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'结束对话'**
   String get orbEnd;
+
+  /// No description provided for @jumpToBottom.
+  ///
+  /// In zh, this message translates to:
+  /// **'回到底部'**
+  String get jumpToBottom;
 }
 
 class _AppLocalizationsDelegate

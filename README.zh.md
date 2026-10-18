@@ -53,8 +53,8 @@
 | 声纹门控 | Rust + ECAPA 声纹余弦（int8 ONNX，23 MB）；声纹由 `tools/voiceprint` 网页生成 |
 | 音频引擎 | Android 原生（Kotlin）：AudioRecord / AudioTrack / AEC |
 | 上行编码 | Ogg Opus 16 kHz（MediaCodec + MediaMuxer） |
-| 下行解码 | Ogg Opus 24 kHz（MediaExtractor + MediaCodec）→ 重采样到 16 kHz |
-| 与服务端通信 | HTTP + MessagePack，两条独立长轮询循环 |
+| 下行解码 | 连续 Ogg Opus 24 kHz（手写增量解析 + MediaCodec）→ 重采样到 16 kHz |
+| 与服务端通信 | HTTP + MessagePack；上行一问一答，下行前导（文本）+ 连续音频流 |
 | 历史落盘 | NDJSON，按 1 MB 分片，只增不删 |
 
 只支持 **Android arm64**，minSdk 29。iOS 的 Dart 契约已就绪，原生侧没写。
@@ -82,7 +82,10 @@ tools/build_rust_android.sh
 tools/mock_brain.py
 ```
 
-它自带一份手写的 MessagePack 实现，用来验证协议理解有没有跑偏。
+它自带一份手写的 MessagePack 实现，用来验证协议理解有没有跑偏；
+`/brain-to-human` 输出 `[u32 大端文本长度][UTF-8 文本][1 字节 flags]`
+再接一条连续 Ogg Opus 流，支持 `skip_before`、`--no-audio`、
+`--truncate` 和 `--failed`。
 
 ## 目录
 

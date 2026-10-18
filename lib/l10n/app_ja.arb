@@ -236,5 +236,6 @@
   "silent": "無音",
   "orbStart": "会話を開始",
   "orbStarting": "起動中",
-  "orbEnd": "会話を終了"
+  "orbEnd": "会話を終了",
+  "jumpToBottom": "最新へ戻る"
 }

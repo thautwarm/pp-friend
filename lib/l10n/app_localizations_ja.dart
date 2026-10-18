@@ -565,4 +565,7 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get orbEnd => '会話を終了';
+
+  @override
+  String get jumpToBottom => '最新へ戻る';
 }

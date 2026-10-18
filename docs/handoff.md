@@ -55,20 +55,32 @@ Authorization: Bearer <token>
 原方案是 `/human-to-brain` 走 multipart、`/brain-to-human` 按顶层
 `Content-Type` 分派 JSON 或 multipart。
 
-**服务端最终给的规范是：请求和响应都是裸 MessagePack**，
-没有 multipart、没有 boundary、没有 Content-Type 分派。
+**服务端最终给的规范是 MessagePack**，没有 multipart、没有 boundary、
+没有 Content-Type 分派。请求是单个 map；`/brain-to-human` 的响应是
+**二进制前导 + 一条连续 Ogg Opus 流**。
 
 ```
-/human-to-brain   req { brain_id: str, audio: bin }              // Ogg Opus 16k
-                  ret { kind: "text", text: str }
-/brain-to-human   req { brain_id: str }
-                  ret { kind: "empty" }
-                    | { kind: "text", text: str, audio: bin }    // Ogg Opus 24k
+/human-to-brain   req  { brain_id: str, audio: bin }             // Ogg Opus 16k
+                  ret  { kind: "text", text: str }
+
+/brain-to-human   req  { brain_id: str, skip_before?: int }
+                  ret  application/octet-stream:
+                       [u32 BE 文本长度][UTF-8 文本][1 字节 flags][Ogg Opus…]
 ```
 
-`kind` 的取值是 `empty` / `text`（不是早先写的 `response`）。
+- 文本长度 0 = 这一轮没内容；flags 字节照发。
+- flags bit0 = 1 = 这条是 `skip_before` 跳过的旧消息，只有文本、没有音频。
+- 文本一次到齐；音频是**一条连续流**，增量解封装、逐包解码，
+  不能按 HTTP chunk 当独立文件，也不能等整个 body 到齐。
+- body 正常结束 = 说完了；没有结束标记，TTS 中途挂掉也不区分。
+- 出声前合成失败 → HTTP 502，消息放回队列。
+- `skip_before` 只在**用户打断 AI 说话**时带（开口盖过、通知栏停止说话、
+  音量减键）；会话开始、切档案、结束对话都不带，积压原样送达。
+  被跳过的旧消息**一条占一条响应**，客户端把文本上屏、记进
+  `unheard_text`，带同一个水位重发，直到拿到真回复。
 
-详细字段、Content-Type 取值、以及客户端实现要点见 `brain-api.md` §2–§3。
+详细字段、帧格式、Content-Type 取值、以及客户端实现要点见
+`brain-api.md` §2–§3。
 
 ### A4. 音频格式 —— 已定
 
@@ -139,11 +151,12 @@ STT 吃 16k，TTS 出 24k。
   要静满 `vadMinSilenceMs` 才落回，一声咳嗽也能扛出 700ms+。所以还要
   **连续说够 350ms** 才认（`bargeInMinSpeechMs`），否则咳嗽就打断。
 - 被打断时要**上报"我哪一段没听到"**：`/human-to-brain` 加 `unheard_text`
-  （没听到的那部分文字）+ `heard_ms`（见 `brain-api.md` §5.3b）。
+  （没听到的那部分文字，见 `brain-api.md` §5.3b）。客户端还会附带
+  `heard_ms` 供诊断，但它**不在规格里**，服务端应忽略未知字段。
   否则 brain 以为自己讲完了，下一轮接着"刚才说的那个"往下讲，
-  用户只能装懂。**报文字而不是毫秒** —— 给 brain 一个时间点，它还得
-  自己对一遍；要翻成文字，得它在 `/brain-to-human` 里给一份按句的
-  时间账（`spans`，可选字段）。
+  用户只能装懂。**报文字而不是毫秒**：新协议只有整条文本和一条连续
+  音频流，客户端不知道每个字对应哪个采样，只能按「播放头走过的
+  采样数 / 已推进队列的采样数」估出听到的位置，再按句子边界取整。
 - 另有「闭麦」开关：麦克风帧在本地换成静音，一个字节都不上传。
   闭麦期间打断天然失效（本地断句听不到东西）。
 
@@ -153,7 +166,7 @@ STT 吃 16k，TTS 出 24k。
 - ✅ **不存在协议层错误响应**，只有网络问题，客户端自己重试（退避 + 上限）
 - ✅ 上行音频格式：`audio/ogg`，Ogg Opus，16kHz
 
-### A6. 清空播放队列的触发方式 —— **已定**
+### A6. 清空播放的触发方式 —— **已定**
 
 **通知栏按钮 + 音量减键，两个都做。**
 
@@ -312,10 +325,10 @@ UI 显示 `N / 120`，固定 240px 高、内部滚动 —— 不会无限扩展�
 
 **没修、已知的**（都不影响正常使用，写在这里免得当成新 bug 查）：
 
-- 切换的那几毫秒里，旧档案正好回来一条带音频的回复，它可能被排进播放队列，
-  由新聚焦的档案播出来（`_playbackEpoch` 只在打断那一刻作废在途音频，
-  播放队列本身没有档案属主）。用户说这个几毫秒窗口无所谓，不修。
-  上传队列那条的根因和它一样，但已经按"切走就丢"处理掉了
+- ~~切换的那几毫秒里，旧档案正好回来一条带音频的回复，它可能被排进播放
+  队列，由新聚焦的档案播出来。~~ **连续流改造后已消除**：切走时会把旧档案
+  在途的那条 `/brain-to-human` 取消，并抬 `epoch` 作废在途解码/推送；
+  未聚焦档案收到回复时也只记文字就断流，不再有"排着队等别人播"的音频
 - `loadOlder` 往上翻一页没有索引，代价随翻的深度增长（见 `brain-api.md` §7.2）
 
 ---

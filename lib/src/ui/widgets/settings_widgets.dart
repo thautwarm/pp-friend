@@ -16,8 +16,8 @@ String formatBytes(int bytes) {
 /// 底色明暗反推前景色。用户挑一个浅黄主题色时，写死的白字会直接看不见。
 Color onAccentColor(Color background) =>
     ThemeData.estimateBrightnessForColor(background) == Brightness.dark
-        ? Colors.white
-        : Colors.black87;
+    ? Colors.white
+    : Colors.black87;
 
 /// 设置页里那种"标签 + 示例提示"的输入框。
 ///
@@ -84,9 +84,7 @@ class SettingsSection extends StatelessWidget {
           children: [
             Row(
               children: [
-                Expanded(
-                  child: Text(title, style: theme.textTheme.titleSmall),
-                ),
+                Expanded(child: Text(title, style: theme.textTheme.titleSmall)),
                 ?trailing,
               ],
             ),

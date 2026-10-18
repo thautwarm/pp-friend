@@ -1,4 +1,4 @@
-import 'dart:convert';
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -7,7 +7,9 @@ import 'package:http/testing.dart';
 import 'package:msgpack_dart/msgpack_dart.dart' as msgpack;
 import 'package:pp_friend/src/brain/brain_client.dart';
 
-/// 构造一个返回 MessagePack 的假客户端。
+import 'support/framed_brain.dart';
+
+/// 构造一个返回整包 MessagePack 的假客户端（`/human-to-brain` 用）。
 BrainClient clientReturning(
   Uint8List body, {
   int status = 200,
@@ -29,12 +31,16 @@ BrainClient clientReturning(
 
 Uint8List packMap(Map<String, dynamic> map) => msgpack.serialize(map);
 
+Future<Uint8List> collectAudio(BrainReplyStream stream) async {
+  final out = BytesBuilder(copy: false);
+  await for (final chunk in stream.audio) {
+    out.add(chunk);
+  }
+  return out.takeBytes();
+}
+
 void main() {
   // ---------------------------------------------------------------- 字节格式
-  //
-  // 这组向量和 tools/mock_brain.py --selftest 用的是同一批。
-  // Dart 侧用的是第三方 msgpack_dart，Python 侧是手写的 ——
-  // **两个独立实现都同意**，才说明字节格式真没写错。
   group('MessagePack 字节格式（与 Python 侧同一组向量）', () {
     const vectors = <Object?, String>{
       null: 'c0',
@@ -79,161 +85,242 @@ void main() {
     });
   });
 
-  group('/brain-to-human 载荷解析', () {
-    test('kind=empty → BrainEmpty', () {
-      expect(
-        BrainClient.parsePayload({'kind': 'empty'}),
-        isA<BrainEmpty>(),
-      );
+  group('/brain-to-human 前导 + Ogg 流', () {
+    test('文本先到，后面是连续音频；前导被拆碎也能拼回来', () async {
+      final ogg = Uint8List.fromList(List.generate(5000, (i) => i % 251));
+      final body = speechBody('你好。', ogg: ogg);
+      final chunks = <Uint8List>[
+        body.sublist(0, 2),
+        body.sublist(2, 5),
+        body.sublist(5, 7),
+        body.sublist(7, 300),
+        body.sublist(300),
+      ];
+
+      final stream = await streamingBrain(
+        chunks,
+      ).brainToHuman(baseUrl: 'http://h:1', brainId: 'b');
+
+      expect(stream.first, isA<BrainReplyStart>());
+      expect((stream.first as BrainReplyStart).text, '你好。');
+      expect(await collectAudio(stream), ogg);
     });
 
-    test('kind=text → 文本与音频都取到', () {
-      final audio = List<int>.generate(4096, (i) => (i * 31) % 256);
-      final parsed = BrainClient.parsePayload({
-        'kind': 'text',
-        'text': '你好世界',
-        'audio': Uint8List.fromList(audio),
-      });
+    test('音频和网络分块无关：所有字节按顺序交出去', () async {
+      final ogg = Uint8List.fromList(List.generate(37, (i) => i));
+      final body = speechBody('说点什么。', ogg: ogg);
+      final stream = await streamingBrain(<Uint8List>[
+        Uint8List.fromList(body.sublist(0, 9)),
+        Uint8List.fromList(body.sublist(9, 10)),
+        Uint8List.fromList(body.sublist(10)),
+      ]).brainToHuman(baseUrl: 'http://h:1', brainId: 'b');
 
-      final reply = parsed as BrainReply;
-      expect(reply.text, '你好世界');
-      expect(reply.audio, equals(audio));
+      expect((stream.first as BrainReplyStart).text, '说点什么。');
+      expect(await collectAudio(stream), ogg);
     });
 
-    test('缺 audio 字段时按空音频处理，不崩', () {
-      final reply = BrainClient.parsePayload({'kind': 'text', 'text': '只有字'})
-          as BrainReply;
-      expect(reply.text, '只有字');
-      expect(reply.audio, isEmpty);
+    test('文本长度为 0 → BrainEmpty，而且没有音频', () async {
+      final stream = await singleBody(
+        emptyBody(),
+      ).brainToHuman(baseUrl: 'http://h:1', brainId: 'b');
+
+      expect(stream.first, isA<BrainEmpty>());
+      expect((stream.first as BrainEmpty).skippedText, isNull);
+      expect(await collectAudio(stream), isEmpty);
     });
 
-    test('spans 按句解出来：文字与毫秒', () {
-      final reply = BrainClient.parsePayload({
-        'kind': 'text',
-        'text': '第一句第二句',
-        'audio': Uint8List(8),
-        'spans': [
-          {'text': '第一句', 'ms': 1200},
-          {'text': '第二句', 'ms': 900},
-        ],
-      }) as BrainReply;
+    test('flags bit0 → 带 skippedText 的 BrainEmpty，没有音频', () async {
+      final stream = await singleBody(
+        speechBody('旧消息一。', skipped: true),
+      ).brainToHuman(baseUrl: 'http://h:1', brainId: 'b');
 
-      expect(reply.spans, hasLength(2));
-      expect(reply.spans[0].text, '第一句');
-      expect(reply.spans[0].ms, 1200);
-      expect(reply.spans[1].ms, 900);
+      final first = stream.first as BrainEmpty;
+      expect(first.skippedText, '旧消息一。');
+      expect(await collectAudio(stream), isEmpty);
     });
 
-    test('spans 缺失或残缺都只是"没给"，不该让整条回复播不出来', () {
-      // 没给
-      final none = BrainClient.parsePayload({
-        'kind': 'text',
-        'text': 'x',
-      }) as BrainReply;
-      expect(none.spans, isEmpty);
+    test('空 body（一个字节都没有）按 BrainEmpty 处理', () async {
+      final stream = await singleBody(
+        Uint8List(0),
+      ).brainToHuman(baseUrl: 'http://h:1', brainId: 'b');
 
-      // 给了但一条都不合法：没文字、时长不是数、时长为 0
-      final junk = BrainClient.parsePayload({
-        'kind': 'text',
-        'text': 'x',
-        'spans': [
-          <String, dynamic>{'ms': 100},
-          {'text': '没有时长'},
-          {'text': '零时长', 'ms': 0},
-          'not a map',
-        ],
-      }) as BrainReply;
-      expect(junk.spans, isEmpty);
+      expect(stream.first, isA<BrainEmpty>());
+      expect(await collectAudio(stream), isEmpty);
     });
 
-    test('未知 kind → protocol 错误，信息里点明规范取值', () {
-      expect(
-        () => BrainClient.parsePayload({'kind': 'weird'}),
+    test('文本长度超过上限 → protocol 错误', () async {
+      final body = Uint8List(5);
+      ByteData.sublistView(
+        body,
+      ).setUint32(0, 9 * 1024 * 1024, Endian.big);
+
+      await expectLater(
+        singleBody(body).brainToHuman(baseUrl: 'http://h:1', brainId: 'b'),
         throwsA(
-          isA<BrainException>()
-              .having((e) => e.kind, 'kind', BrainErrorKind.protocol)
-              .having((e) => e.message, 'message', contains('empty / text')),
+          isA<BrainException>().having(
+            (e) => e.kind,
+            'kind',
+            BrainErrorKind.protocol,
+          ),
         ),
       );
     });
+
+    test('前导在文本中间结束 → truncated', () async {
+      final body = speechBody('你好。').sublist(0, 6);
+      await expectLater(
+        singleBody(
+          Uint8List.fromList(body),
+        ).brainToHuman(baseUrl: 'http://h:1', brainId: 'b'),
+        throwsA(
+          isA<BrainException>().having(
+            (e) => e.kind,
+            'kind',
+            BrainErrorKind.truncated,
+          ),
+        ),
+      );
+    });
+
+    test('前导在 flags 之前结束 → truncated', () async {
+      final body = speechBody('你好。').sublist(0, 7);
+      await expectLater(
+        singleBody(
+          Uint8List.fromList(body),
+        ).brainToHuman(baseUrl: 'http://h:1', brainId: 'b'),
+        throwsA(
+          isA<BrainException>().having(
+            (e) => e.kind,
+            'kind',
+            BrainErrorKind.truncated,
+          ),
+        ),
+      );
+    });
+
+    test('前导迟迟不来 → BrainEmpty，不是错误', () async {
+      final ctrl = StreamController<List<int>>();
+      addTearDown(ctrl.close);
+      final brain = BrainClient(
+        client: MockClient.streaming(
+          (request, bodyStream) async =>
+              http.StreamedResponse(ctrl.stream, 200),
+        ),
+      );
+
+      final stream = await brain.brainToHuman(
+        baseUrl: 'http://h:1',
+        brainId: 'b',
+        timeout: const Duration(milliseconds: 60),
+      );
+
+      expect(stream.first, isA<BrainEmpty>());
+      expect(await collectAudio(stream), isEmpty);
+    });
+
+    test('前导到手之后不再受 timeout 约束', () async {
+      final ctrl = StreamController<List<int>>();
+      addTearDown(ctrl.close);
+      final brain = BrainClient(
+        client: MockClient.streaming(
+          (request, bodyStream) async =>
+              http.StreamedResponse(ctrl.stream, 200),
+        ),
+      );
+
+      final future = brain.brainToHuman(
+        baseUrl: 'http://h:1',
+        brainId: 'b',
+        timeout: const Duration(milliseconds: 60),
+      );
+      ctrl.add(speechBody('慢慢来。'));
+      final stream = await future;
+      expect((stream.first as BrainReplyStart).text, '慢慢来。');
+
+      // 超过 timeout 之后音频还可以继续到。
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      final audio = <Uint8List>[];
+      final done = () async {
+        await for (final chunk in stream.audio) {
+          audio.add(chunk);
+        }
+      }();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      ctrl.add(Uint8List.fromList(const <int>[1, 2, 3]));
+      await ctrl.close();
+      await done;
+      expect(audio, [
+        Uint8List.fromList(const <int>[1, 2, 3]),
+      ]);
+    });
+
+    test('cancel() 之后音频流结束，且 wasCancelled 为 true', () async {
+      final ctrl = StreamController<List<int>>();
+      addTearDown(ctrl.close);
+      final brain = BrainClient(
+        client: MockClient.streaming(
+          (request, bodyStream) async =>
+              http.StreamedResponse(ctrl.stream, 200),
+        ),
+      );
+
+      final future = brain.brainToHuman(baseUrl: 'http://h:1', brainId: 'b');
+      ctrl.add(speechBody('说一半。'));
+      final stream = await future;
+      expect(stream.first, isA<BrainReplyStart>());
+
+      final collected = collectAudio(stream);
+      await stream.cancel();
+      expect(stream.wasCancelled, isTrue);
+      expect(await collected, isEmpty);
+    });
+
+    test('skip_before 只在传入时出现', () async {
+      late List<int> sent;
+      final brain = singleBody(
+        emptyBody(),
+        onRequest: (_, body) => sent = body,
+      );
+
+      await brain.brainToHuman(
+        baseUrl: 'http://h:1',
+        brainId: 'b',
+        skipBefore: 1234567890,
+      );
+      var decoded = msgpack.deserialize(Uint8List.fromList(sent)) as Map;
+      expect(decoded['skip_before'], 1234567890);
+
+      await brain.brainToHuman(baseUrl: 'http://h:1', brainId: 'b');
+      decoded = msgpack.deserialize(Uint8List.fromList(sent)) as Map;
+      expect(decoded.containsKey('skip_before'), isFalse);
+    });
   });
 
-  group('/brain-to-human 请求与响应', () {
+  group('/brain-to-human 请求', () {
     test('请求体是 msgpack{brain_id}', () async {
       late List<int> sent;
-      final brain = clientReturning(
-        packMap({'kind': 'empty'}),
+      final brain = singleBody(
+        emptyBody(),
         onRequest: (_, body) => sent = body,
       );
 
       await brain.brainToHuman(baseUrl: 'http://h:1', brainId: '员工3');
-      expect(msgpack.deserialize(Uint8List.fromList(sent)), {'brain_id': '员工3'});
+      expect(msgpack.deserialize(Uint8List.fromList(sent)), {
+        'brain_id': '员工3',
+      });
     });
 
     test('Content-Type / Accept 是 msgpack', () async {
       late http.BaseRequest captured;
-      final brain = clientReturning(
-        packMap({'kind': 'empty'}),
+      final brain = singleBody(
+        emptyBody(),
         onRequest: (req, _) => captured = req,
       );
 
       await brain.brainToHuman(baseUrl: 'http://h:1', brainId: 'b');
-      final ct = captured.headers['Content-Type'] ?? captured.headers['content-type'];
+      final ct =
+          captured.headers['Content-Type'] ?? captured.headers['content-type'];
       expect(ct, BrainClient.msgpackContentType);
-    });
-
-    test('text + 音频：端到端解出来', () async {
-      final audio = List<int>.generate(2048, (i) => (i * 13) % 256);
-      final brain = clientReturning(packMap({
-        'kind': 'text',
-        'text': '嗨',
-        'audio': Uint8List.fromList(audio),
-      }));
-
-      final reply = await brain.brainToHuman(baseUrl: 'http://h:1', brainId: 'b')
-          as BrainReply;
-      expect(reply.text, '嗨');
-      expect(reply.audio, equals(audio));
-    });
-
-    test('音频里含任意字节都不会被误解析', () async {
-      // 塞进 CRLF、非法 UTF-8、以及像 JSON 的字节
-      final audio = <int>[
-        0x0D, 0x0A, 0x0D, 0x0A,
-        0xFF, 0xFE, 0x80, 0x81,
-        0x7B, 0x22, 0x6B, 0x22, 0x7D, // {"k"}
-        0x00, 0x00,
-      ];
-      final brain = clientReturning(packMap({
-        'kind': 'text',
-        'text': 'bin',
-        'audio': Uint8List.fromList(audio),
-      }));
-
-      final reply = await brain.brainToHuman(baseUrl: 'http://h:1', brainId: 'b')
-          as BrainReply;
-      expect(reply.audio, equals(audio));
-    });
-
-    test('非 MessagePack 的 body → protocol 错误', () async {
-      final brain = clientReturning(
-        Uint8List.fromList(utf8.encode('this is plain text')),
-      );
-      expect(
-        () => brain.brainToHuman(baseUrl: 'http://h:1', brainId: 'b'),
-        throwsA(
-          isA<BrainException>()
-              .having((e) => e.kind, 'kind', BrainErrorKind.protocol),
-        ),
-      );
-    });
-
-    test('空 body → protocol 错误', () async {
-      final brain = clientReturning(Uint8List(0));
-      expect(
-        () => brain.brainToHuman(baseUrl: 'http://h:1', brainId: 'b'),
-        throwsA(isA<BrainException>()),
-      );
     });
   });
 
@@ -259,7 +346,10 @@ void main() {
 
       expect(result.text, '你好世界');
       expect(captured.method, 'POST');
-      expect(captured.url.toString(), 'http://example.test:8099/human-to-brain');
+      expect(
+        captured.url.toString(),
+        'http://example.test:8099/human-to-brain',
+      );
 
       final decoded = msgpack.deserialize(Uint8List.fromList(sent)) as Map;
       expect(decoded['brain_id'], '员工3');
@@ -289,7 +379,6 @@ void main() {
         oggBytes: Uint8List(4),
       );
       decoded = msgpack.deserialize(Uint8List.fromList(sent)) as Map;
-      // "没被打断"和"听到 0ms"是两件事，别用 0 冒充缺失
       expect(decoded.containsKey('heard_ms'), isFalse);
     });
 
@@ -367,20 +456,24 @@ void main() {
   group('鉴权', () {
     test('token 为空时不发 Authorization 头', () async {
       late http.BaseRequest captured;
-      final brain = clientReturning(
-        packMap({'kind': 'empty'}),
+      final brain = singleBody(
+        emptyBody(),
         onRequest: (req, _) => captured = req,
       );
 
-      await brain.brainToHuman(baseUrl: 'http://h:1', brainId: 'b', token: '   ');
+      await brain.brainToHuman(
+        baseUrl: 'http://h:1',
+        brainId: 'b',
+        token: '   ',
+      );
       expect(captured.headers.containsKey('authorization'), isFalse);
       expect(captured.headers.containsKey('Authorization'), isFalse);
     });
 
     test('token 非空时发 Bearer，且去掉首尾空白', () async {
       late http.BaseRequest captured;
-      final brain = clientReturning(
-        packMap({'kind': 'empty'}),
+      final brain = singleBody(
+        emptyBody(),
         onRequest: (req, _) => captured = req,
       );
 
@@ -389,16 +482,14 @@ void main() {
         brainId: 'b',
         token: ' s3cret ',
       );
-      final auth = captured.headers['Authorization'] ??
+      final auth =
+          captured.headers['Authorization'] ??
           captured.headers['authorization'];
       expect(auth, 'Bearer s3cret');
     });
 
     test('401 → auth 错误，且不可重试', () async {
-      final brain = clientReturning(
-        Uint8List.fromList(utf8.encode('unauthorized')),
-        status: 401,
-      );
+      final brain = singleBody(emptyBody(), status: 401);
       expect(
         () => brain.brainToHuman(baseUrl: 'http://h:1', brainId: 'b'),
         throwsA(
@@ -410,10 +501,7 @@ void main() {
     });
 
     test('500 → server 错误，可重试', () async {
-      final brain = clientReturning(
-        Uint8List.fromList(utf8.encode('boom')),
-        status: 500,
-      );
+      final brain = singleBody(emptyBody(), status: 500);
       expect(
         () => brain.brainToHuman(baseUrl: 'http://h:1', brainId: 'b'),
         throwsA(
@@ -426,22 +514,37 @@ void main() {
   });
 
   group('abort', () {
-    test('abort() 会关掉底层 client', () async {
+    test('abort() 取消在途流，但不会关掉注入的 client', () async {
       var closeCount = 0;
       final inner = MockClient(
-        (_) async => http.Response.bytes(packMap({'kind': 'empty'}), 200),
+        (_) async => http.Response.bytes(emptyBody(), 200),
       );
       final tracking = _TrackingClient(inner, () => closeCount++);
       final brain = BrainClient(client: tracking);
 
-      await brain.brainToHuman(baseUrl: 'http://h:1', brainId: 'b');
+      final stream = await brain.brainToHuman(
+        baseUrl: 'http://h:1',
+        brainId: 'b',
+      );
       expect(closeCount, 0);
 
       brain.abort();
-      expect(closeCount, 1, reason: 'abort() 必须真的关掉 client');
+      expect(closeCount, 0, reason: '注入的 client 归调用方所有，不能替它关');
+      expect(stream.wasCancelled, isTrue);
 
-      // abort 之后内部换了新 client，还能继续用
-      await brain.brainToHuman(baseUrl: 'http://h:1', brainId: 'b');
+      // client 没被关，abort 之后还能继续用
+      final again = await brain.brainToHuman(
+        baseUrl: 'http://h:1',
+        brainId: 'b',
+      );
+      expect(again.first, isA<BrainEmpty>());
+    });
+
+    test('自己造的 client 重复 abort / dispose 不抛异常', () {
+      final brain = BrainClient();
+      brain.abort();
+      brain.abort();
+      brain.dispose();
     });
 
     test('重复 abort 不抛异常', () {

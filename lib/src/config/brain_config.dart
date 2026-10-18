@@ -3,11 +3,7 @@
 /// 注意这里**没有 STT / TTS 的字段** —— 识别和合成都在 brain 那边，
 /// 手机只负责采集、切句、上传、播放。
 class BrainConfig {
-  const BrainConfig({
-    this.baseUrl = '',
-    this.brainId = '',
-    this.token = '',
-  });
+  const BrainConfig({this.baseUrl = '', this.brainId = '', this.token = ''});
 
   /// 例如 http://192.168.0.100:8000。留空则无法开始对话。
   final String baseUrl;
@@ -32,18 +28,18 @@ class BrainConfig {
       );
 
   Map<String, dynamic> toJson() => {
-        'baseUrl': baseUrl,
-        'brainId': brainId,
-        'token': token,
-      };
+    'baseUrl': baseUrl,
+    'brainId': brainId,
+    'token': token,
+  };
 
   /// 类型不对就当那个字段没填。**不能抛** —— 抛出去会被
   /// `ConfigStore.load` 兜成"整份配置归零"，用户填好的地址一起没。
   factory BrainConfig.fromJson(Map<String, dynamic> json) => BrainConfig(
-        baseUrl: _string(json['baseUrl']),
-        brainId: _string(json['brainId']),
-        token: _string(json['token']),
-      );
+    baseUrl: _string(json['baseUrl']),
+    brainId: _string(json['brainId']),
+    token: _string(json['token']),
+  );
 
   static String _string(Object? value) => value is String ? value : '';
 }

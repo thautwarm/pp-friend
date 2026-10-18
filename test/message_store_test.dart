@@ -10,11 +10,12 @@ import 'package:pp_friend/src/storage/message_store.dart';
 
 /// 某个档案最新的那个片子文件。
 File _segmentOf(Directory root, String profileId) {
-  final files = Directory('${root.path}/history/$profileId')
-      .listSync()
-      .whereType<File>()
-      .toList()
-    ..sort((a, b) => a.path.compareTo(b.path));
+  final files =
+      Directory('${root.path}/history/$profileId')
+          .listSync()
+          .whereType<File>()
+          .toList()
+        ..sort((a, b) => a.path.compareTo(b.path));
   return files.last;
 }
 
@@ -44,7 +45,10 @@ void main() {
       final recent = await s.loadRecent('p1');
       expect(recent.map((m) => m.seq), [1, 2]);
       expect(recent.map((m) => m.text), ['你好', '在的']);
-      expect(recent.map((m) => m.role), [MessageRole.user, MessageRole.assistant]);
+      expect(recent.map((m) => m.role), [
+        MessageRole.user,
+        MessageRole.assistant,
+      ]);
     });
 
     test('档案之间互不可见', () async {
@@ -71,7 +75,11 @@ void main() {
 
       // 换一个实例读同一个目录，模拟 App 重启
       final again = store();
-      final second = await again.append('p1', role: MessageRole.user, text: '第二句');
+      final second = await again.append(
+        'p1',
+        role: MessageRole.user,
+        text: '第二句',
+      );
       expect(second.seq, 2);
     });
 
@@ -175,8 +183,10 @@ void main() {
           .listSync()
           .whereType<File>()
           .single;
-      await file.writeAsString('{"v":1,"n":2,"r":"u","t":"写到一半就',
-          mode: FileMode.append);
+      await file.writeAsString(
+        '{"v":1,"n":2,"r":"u","t":"写到一半就',
+        mode: FileMode.append,
+      );
 
       final recent = await s.loadRecent('p1');
       expect(recent.length, 1);
@@ -199,8 +209,11 @@ void main() {
       await file.writeAsString('${lines.join('\n')}\n');
 
       // 坏行跳过，好的三条一条不少
-      expect((await s.loadRecent('p1')).map((m) => m.text),
-          ['第 1 句', '第 2 句', '第 3 句']);
+      expect((await s.loadRecent('p1')).map((m) => m.text), [
+        '第 1 句',
+        '第 2 句',
+        '第 3 句',
+      ]);
     });
 
     test('崩溃留下半行之后接着写，新的一条照样读得出来', () async {
@@ -209,8 +222,10 @@ void main() {
 
       // 模拟进程被杀：最后一行只写了一半，**而且没有结尾换行**
       final file = _segmentOf(root, 'p1');
-      await file.writeAsString('{"v":1,"n":2,"r":"u","t":"写到一半就',
-          mode: FileMode.append);
+      await file.writeAsString(
+        '{"v":1,"n":2,"r":"u","t":"写到一半就',
+        mode: FileMode.append,
+      );
 
       // 重启之后接着写
       final s2 = store();
@@ -232,8 +247,10 @@ void main() {
 
       // 上一次写只落了一半（磁盘满、被中断）—— 没有人重启进程
       final file = _segmentOf(root, 'p1');
-      await file.writeAsString('{"v":1,"n":2,"r":"u","t":"写到一半就',
-          mode: FileMode.append);
+      await file.writeAsString(
+        '{"v":1,"n":2,"r":"u","t":"写到一半就',
+        mode: FileMode.append,
+      );
 
       await s.append('p1', role: MessageRole.user, text: '接着写的一句');
 
@@ -241,7 +258,8 @@ void main() {
       expect(
         texts,
         contains('接着写的一句'),
-        reason: '不能因为"这次会话里已经检查过尾巴了"就不再看 —— '
+        reason:
+            '不能因为"这次会话里已经检查过尾巴了"就不再看 —— '
             '半行恰恰是上一次失败的写留下的',
       );
       expect(texts, contains('完整的一句'));
@@ -260,16 +278,17 @@ void main() {
       await file.writeAsBytes([
         ...bytes,
         ...'{"v":1,"n":4,"r":"u","t":"'.codeUnits,
-        0xE6, 0xB1,
+        0xE6,
+        0xB1,
         ...'\n'.codeUnits,
       ]);
 
       final recent = await s.loadRecent('p1');
-      expect(
-        recent.map((m) => m.text),
-        ['第 1 句', '第 2 句', '第 3 句'],
-        reason: '一行非法字节不该让整个片子读不出来',
-      );
+      expect(recent.map((m) => m.text), [
+        '第 1 句',
+        '第 2 句',
+        '第 3 句',
+      ], reason: '一行非法字节不该让整个片子读不出来');
     });
 
     test('读不出来的行会出声，不会悄悄少几条', () async {
@@ -355,10 +374,17 @@ void main() {
         await s.append('p1', role: MessageRole.user, text: '第 $i 句');
       }
 
-      expect((await s.loadRecent('p1', limit: 5)).map((m) => m.seq),
-          [21, 22, 23, 24, 25]);
-      expect((await s.loadOlder('p1', beforeSeq: 21, limit: 3)).map((m) => m.seq),
-          [18, 19, 20]);
+      expect((await s.loadRecent('p1', limit: 5)).map((m) => m.seq), [
+        21,
+        22,
+        23,
+        24,
+        25,
+      ]);
+      expect(
+        (await s.loadOlder('p1', beforeSeq: 21, limit: 3)).map((m) => m.seq),
+        [18, 19, 20],
+      );
       expect(await s.lastSeq('p1'), 25);
 
       await s.clear('p1');

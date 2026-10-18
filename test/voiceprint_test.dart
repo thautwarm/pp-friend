@@ -157,13 +157,15 @@ void main() {
       h.engine.micCtrl.add(Uint8List(1920));
       await pumpEventQueue();
 
-      h.segmenter.emitFiltered(const FilteredSegment(
-        startMs: 1000,
-        endMs: 2000,
-        durationMs: 1000,
-        pvadScore: 0.02,
-        pvadTargetRatio: 0.0,
-      ));
+      h.segmenter.emitFiltered(
+        const FilteredSegment(
+          startMs: 1000,
+          endMs: 2000,
+          durationMs: 1000,
+          pvadScore: 0.02,
+          pvadTargetRatio: 0.0,
+        ),
+      );
       await pumpEventQueue();
 
       expect(h.controller.messages, isEmpty, reason: '别人的话不该进历史');
@@ -210,12 +212,10 @@ Future<_Harness> _boot({
     engine: engine,
     brain: brain,
     appDir: () async => root,
-    segmenterFactory: ({
-      required int sampleRate,
-      required AssistantConfig config,
-    }) async {
-      return segmenter;
-    },
+    segmenterFactory:
+        ({required int sampleRate, required AssistantConfig config}) async {
+          return segmenter;
+        },
   );
 
   await controller.updateConfig(
