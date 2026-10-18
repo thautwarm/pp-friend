@@ -82,13 +82,10 @@
   </section>
 
   <section class="block" id="encoding">
-    <h2 data-i18n="b.enc.title">载荷编码：MessagePack</h2>
+    <h2 data-i18n="b.enc.title">载荷编码</h2>
     <p class="lead" data-i18n="b.enc.body">请求是单个裸的 MessagePack map；/brain-to-human 的响应是二进制前导加一条连续 Ogg Opus 流。不是 JSON，也不是 multipart。音频是原始字节：不是 base64，不是字符串，二进制原样进出。</p>
     <ul class="tick">
       <li data-i18n="b.enc.ct">Content-Type / Accept 用 application/msgpack。规范没写明这个取值，客户端把它收在一个常量里，改一处即可。</li>
-      <li data-i18n="b.enc.frame">前导是 [4 字节 u32 大端文本长度][UTF-8 文本][1 字节 flags]，长度只算文本。前导可能跨多个网络分块。</li>
-      <li data-i18n="b.enc.truncated">文本长度超过客户端上限是协议错误；body 在前导中间结束是截断，客户端立刻重发。前导之后的字节全部属于 Ogg 流。</li>
-      <li data-i18n="b.enc.warn">不要把整个响应当 UTF-8 解，前导之后是二进制音频。按固定格式切出前导，剩下的原样喂解码器。</li>
     </ul>
   </section>
 
@@ -141,6 +138,9 @@
       <li data-i18n="b.down.skip">skip_before 是 UTC epoch 毫秒。早于它的旧消息一条占一条响应（flags bit0 = 1）；客户端一直重发（仍带同一个值），直到拿到真回复。</li>
       <li data-i18n="b.down.timeout">超时只约束等前导；前导到手后，连接可以一直挂到 body 正常结束。没内容时服务端挂到长轮询上限再回长度 0。</li>
       <li data-i18n="b.down.end">body 正常结束 = 说完了，没有结束标记；前导中间断开 = 截断，客户端重发。出声前合成失败回 502。</li>
+      <li data-i18n="b.down.frame">前导是 [4 字节 u32 大端文本长度][UTF-8 文本][1 字节 flags]，长度只算文本。前导可能跨多个网络分块。</li>
+      <li data-i18n="b.down.truncated">文本长度超过客户端上限是协议错误；body 在前导中间结束是截断，客户端立刻重发。前导之后的字节全部属于 Ogg 流。</li>
+      <li data-i18n="b.down.warn">不要把整个响应当 UTF-8 解，前导之后是二进制音频。按固定格式切出前导，剩下的原样喂解码器。</li>
     </ul>
   </section>
 
