@@ -23,6 +23,10 @@ env:
   FLUTTER_VERSION: "3.47.7"
   ANDROID_PLATFORM: "36"
   ANDROID_BUILD_TOOLS: "36.0.0"
+  # Preinstalled on the ubuntu-latest image. Keep it explicit so `flutter`
+  # and our own sdkmanager invocation agree on the SDK location.
+  ANDROID_HOME: /usr/local/lib/android/sdk
+  ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
 
 jobs:
   build:
@@ -37,16 +41,19 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      # The ubuntu-latest image ships the Android SDK and sdkmanager.
-      # android-actions/setup-android@v3 currently fails on its internal
-      # `sdkmanager tools` call, so install what we need directly.
+      # The ubuntu-latest image ships the Android SDK and sdkmanager, but
+      # sdkmanager is not on PATH. android-actions/setup-android@v3 currently
+      # fails on its internal `sdkmanager tools` call, so invoke it directly.
       - name: Install SDK platform and build tools
         run: |
-          sdkmanager --install \
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -maxdepth 3 -name sdkmanager -type f | head -n1)"
+          test -n "$SDKMANAGER"
+          "$SDKMANAGER" --install \
             "platforms;android-${ANDROID_PLATFORM}" \
             "build-tools;${ANDROID_BUILD_TOOLS}" \
             "platform-tools"
-          yes | sdkmanager --licenses >/dev/null
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
 
       - name: Set up Gradle cache
         uses: gradle/actions/setup-gradle@v4
