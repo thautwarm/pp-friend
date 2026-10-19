@@ -37,9 +37,9 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
+      # The ubuntu-latest image ships the Android SDK and sdkmanager.
+      # android-actions/setup-android@v3 currently fails on its internal
+      # `sdkmanager tools` call, so install what we need directly.
       - name: Install SDK platform and build tools
         run: |
           sdkmanager --install \
