@@ -70,6 +70,22 @@ flutter build apk --release
 tools/build_rust_android.sh
 ```
 
+## リリース
+
+GitHub Actions（`.github/workflows/build-release.yml`）は、`main` への push、
+Pull Request、手動実行のたびに `flutter analyze` と `flutter test` を回し、
+arm64-v8a の release APK をビルドしてワークフローの成果物として添付します。
+
+GitHub Release を公開するには、`pubspec.yaml` のバージョンに合わせたタグを
+push します：
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+手動実行時に `release_tag` を入力してリリースを作ることもできます。
+
 ## エンドツーエンドの自己テスト
 
 リポジトリには、プロトコルに沿って手書きした**偽の brain** が入っています。サーバーなしで経路全体を動かせます：

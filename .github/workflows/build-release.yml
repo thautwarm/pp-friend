@@ -1,0 +1,115 @@
+name: Build & Release
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Create a GitHub Release with this tag (e.g. v1.0.0). Leave empty to only build."
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-release-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: "3.47.7"
+  ANDROID_PLATFORM: "36"
+  ANDROID_BUILD_TOOLS: "36.0.0"
+
+jobs:
+  build:
+    name: Analyze, test and build APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install SDK platform and build tools
+        run: |
+          sdkmanager --install \
+            "platforms;android-${ANDROID_PLATFORM}" \
+            "build-tools;${ANDROID_BUILD_TOOLS}" \
+            "platform-tools"
+          yes | sdkmanager --licenses >/dev/null
+
+      - name: Set up Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test
+
+      - name: Read app version
+        id: version
+        run: |
+          raw="$(sed -n 's/^version:[[:space:]]*//p' pubspec.yaml | head -n1)"
+          echo "full=${raw}" >> "$GITHUB_OUTPUT"
+          echo "name=${raw%%+*}" >> "$GITHUB_OUTPUT"
+
+      - name: Build release APK
+        run: flutter build apk --release --target-platform android-arm64
+
+      - name: Rename APK
+        run: |
+          cp build/app/outputs/flutter-apk/app-release.apk \
+            "pp-friend-${{ steps.version.outputs.name }}-arm64-v8a.apk"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: pp-friend-${{ steps.version.outputs.name }}-arm64-v8a
+          path: pp-friend-${{ steps.version.outputs.name }}-arm64-v8a.apk
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    if: >-
+      startsWith(github.ref, 'refs/tags/v') ||
+      (github.event_name == 'workflow_dispatch' && inputs.release_tag != '')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download APK
+        uses: actions/download-artifact@v4
+        with:
+          pattern: pp-friend-*
+          path: dist
+          merge-multiple: true
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.release_tag || github.ref_name }}
+          name: ${{ inputs.release_tag || github.ref_name }}
+          files: dist/*.apk
+          generate_release_notes: true
+          make_latest: true

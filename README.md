@@ -70,6 +70,24 @@ flutter build apk --release
 tools/build_rust_android.sh
 ```
 
+## Releases
+
+GitHub Actions (`.github/workflows/build-release.yml`) runs `flutter analyze`
+and `flutter test`, then builds the arm64-v8a release APK on every push to
+`main`, every pull request, and manual dispatches. The APK is attached to the
+workflow run as an artifact.
+
+To publish a GitHub Release, push a tag (keep it in sync with the version in
+`pubspec.yaml`):
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+A manual dispatch can also create a release by filling in its `release_tag`
+input.
+
 ## End-to-end self-test
 
 The repository ships a **hand-written fake brain** that follows the protocol, so the whole path can be exercised without any server:

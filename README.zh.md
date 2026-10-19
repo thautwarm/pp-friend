@@ -74,6 +74,21 @@ flutter build apk --release
 tools/build_rust_android.sh
 ```
 
+## 发布
+
+GitHub Actions（`.github/workflows/build-release.yml`）会在每次推送到 `main`、
+每个 Pull Request 和手动触发时运行 `flutter analyze`、`flutter test`，
+然后构建 arm64-v8a 的 release APK，并把它作为工作流产物上传。
+
+要发布 GitHub Release，推一个标签（和 `pubspec.yaml` 里的版本保持一致）：
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+手动触发工作流时也可以填 `release_tag` 来创建发布。
+
 ## 端到端自测
 
 仓库里带了一个**按协议手写实现的假 brain**，不依赖任何服务端就能把链路跑通：
