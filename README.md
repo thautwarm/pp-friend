@@ -17,7 +17,7 @@ A voice assistant you can talk to at any time, running on a brain in your own ho
 
 - **Full duplex**: you speak while the AI listens, and the AI speaks while you listen — both directions open at once
 - **Barge-in**: if you start talking while the AI is speaking, it stops immediately; it reports "where I was cut off" to the brain instead of letting the brain think it finished
-- **Keeps running in the background**: switch apps or lock the screen and the conversation continues (a foreground service holds the recording)
+- **Keeps running in the background**: switch apps or lock the screen and the conversation continues (a foreground service holds the recording); if the other app takes audio focus (video, music), voice pauses without dropping the connection and resumes when you come back
 - **Local endpointing**: Silero VAD runs on the phone (Rust); only complete utterances are uploaded, not a continuous audio stream
 - **Speaker verification**: compares your voiceprint against each utterance with ECAPA cosine similarity; long enough utterances below the threshold are dropped entirely — family members' speech is neither uploaded nor added to the agent's context
 - **Multiple profiles**: each profile has its own brain configuration and history and can run concurrently; only the focused one plays audio, the others only record text

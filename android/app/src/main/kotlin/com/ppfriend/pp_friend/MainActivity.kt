@@ -16,6 +16,20 @@ class MainActivity : FlutterActivity() {
     }
 
     /**
+     * 回到前台 = 用户显式回来了。永久失焦后在这里重取音频焦点，
+     * 会话才能从"外部音频占用"的暂停状态里恢复。
+     */
+    override fun onResume() {
+        super.onResume()
+        NativeVoiceEngine.get(applicationContext).onAppForeground()
+    }
+
+    override fun onPause() {
+        NativeVoiceEngine.get(applicationContext).onAppBackground()
+        super.onPause()
+    }
+
+    /**
      * 音量减键 = "让它闭嘴"（可在设置里关掉）。
      *
      * 三个条件都满足才拦截：设置里开着、**正在播放 AI 语音**、且在前台。

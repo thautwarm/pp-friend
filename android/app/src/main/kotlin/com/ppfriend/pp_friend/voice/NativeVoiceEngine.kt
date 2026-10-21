@@ -5,6 +5,7 @@ import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
+import android.media.AudioFocusRequest
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioRecord
@@ -53,6 +54,10 @@ class NativeVoiceEngine private constructor(private val appContext: Context) {
         private const val TELEMETRY_INTERVAL_MS = 33L
 
         private const val SILENCE_DB = -120.0
+
+        /** 焦点请求失败后的首次重试间隔，之后指数退避（毫秒）。 */
+        private const val FOCUS_RETRY_MS = 2000L
+        private const val FOCUS_RETRY_MAX_MS = 30000L
 
         /**
          * 算作"耳机"的输出设备。蓝牙只收 SCO / BLE —— A2DP 是音乐通道，
@@ -140,6 +145,11 @@ class NativeVoiceEngine private constructor(private val appContext: Context) {
 
     private var manualAec: AcousticEchoCanceler? = null
     private var focusHeld = false
+    private var focusRequest: AudioFocusRequest? = null
+
+    /** 永久失焦之后、恢复之前为 true。用来决定要不要补发恢复事件。 */
+    private var recoveringFocus = false
+    private var focusRetryDelayMs = FOCUS_RETRY_MS
     private var savedAudioMode = AudioManager.MODE_NORMAL
     private var savedSpeakerphone = false
 
@@ -260,6 +270,24 @@ class NativeVoiceEngine private constructor(private val appContext: Context) {
             )
             ?: return
         runCatching { audioManager.setCommunicationDevice(target) }
+    }
+
+    /** 暂停期间把音频路由还给系统，别把别的应用的声音拽进通话通道。 */
+    private fun releaseRoutingForSuspension() {
+        runCatching { audioManager.mode = savedAudioMode }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            runCatching { audioManager.clearCommunicationDevice() }
+        }
+        runCatching {
+            @Suppress("DEPRECATION")
+            audioManager.isSpeakerphoneOn = savedSpeakerphone
+        }
+    }
+
+    /** 焦点回来了，把通话路由重新装回去。 */
+    private fun restoreRoutingForResume() {
+        runCatching { audioManager.mode = profile.audioManagerModeValue }
+        applyRouting()
     }
 
     /** 当前有没有插着"出声的耳机"。外放和听筒本身不算。 */
@@ -727,10 +755,57 @@ class NativeVoiceEngine private constructor(private val appContext: Context) {
 
     // ---------------------------------------------------------------- 音频焦点
 
+    /**
+     * App 回到前台。
+     *
+     * 平台规定永久失焦之后必须由用户的显式动作来恢复播放。回到这个 App
+     * 就是那个动作：这时候重取焦点、补发恢复事件，Dart 那边才会重新收音。
+     */
+    fun onAppForeground() {
+        if (!audioRunning || focusHeld) return
+        requestAudioFocus(quiet = true)
+    }
+
+    /**
+     * App 离开前台。
+     *
+     * 还没拿到手的焦点请求要撤掉，否则它可能在后台被"补授"，把用户正在
+     * 看的视频顶掉。已经持有的焦点保持不动 —— 后台会话还要继续用。
+     */
+    fun onAppBackground() {
+        if (focusHeld) return
+        resetFocusRetry()
+        focusRequest?.let { runCatching { audioManager.abandonAudioFocusRequest(it) } }
+        focusRequest = null
+    }
+
     private val focusListener = AudioManager.OnAudioFocusChangeListener { change ->
+        // stopAudio 之后可能还有在途的焦点回调（延迟请求恰好被授予）。
+        // 不忽略的话会留下"以为自己还持有焦点"的幽灵状态，下一次
+        // startAudio 就会直接跳过申请，整场会话都收不到 LOSS。
+        if (!audioRunning) return@OnAudioFocusChangeListener
         val event: Map<String, Any>? = when (change) {
-            AudioManager.AUDIOFOCUS_LOSS ->
-                mapOf("type" to "interruptionBegan", "transient" to false, "canDuck" to false)
+            AudioManager.AUDIOFOCUS_LOSS -> {
+                // 永久失焦后系统把我们摘出焦点栈，而且**不会再回调 GAIN**。
+                // 但不能马上重取：B 站这类普通播放器不是"锁定持有者"，
+                // 重新 request 会直接把它顶掉（它收到 LOSS、视频被暂停）。
+                // 正确做法是等用户自己回来 —— App 回到前台时再请求，
+                // 见 [onAppForeground]。
+                emitEvent(
+                    mapOf(
+                        "type" to "interruptionBegan",
+                        "transient" to false,
+                        "canDuck" to false,
+                    ),
+                )
+                focusHeld = false
+                recoveringFocus = true
+                // 暂停期间把路由还给系统：MODE_IN_COMMUNICATION + 通信设备
+                // 会把别的应用的媒体声音也拉到通话通道上（蓝牙尤其明显），
+                // 用户切去看 B 站会发现视频没声或声音发闷。
+                releaseRoutingForSuspension()
+                null
+            }
 
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT ->
                 mapOf("type" to "interruptionBegan", "transient" to true, "canDuck" to false)
@@ -738,32 +813,98 @@ class NativeVoiceEngine private constructor(private val appContext: Context) {
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK ->
                 mapOf("type" to "interruptionBegan", "transient" to true, "canDuck" to true)
 
-            AudioManager.AUDIOFOCUS_GAIN ->
-                mapOf("type" to "interruptionEnded", "shouldResume" to true)
+            AudioManager.AUDIOFOCUS_GAIN -> {
+                // 延迟请求被满足时系统从这里回调。只有在"失焦后等恢复"
+                // 这个状态下才需要告诉 Dart，启动时的普通授予不用报。
+                focusHeld = true
+                resetFocusRetry()
+                if (!recoveringFocus) {
+                    null
+                } else {
+                    recoveringFocus = false
+                    restoreRoutingForResume()
+                    mapOf("type" to "interruptionEnded", "shouldResume" to true)
+                }
+            }
 
             else -> null
         }
         event?.let { emitEvent(it) }
     }
 
-    @Suppress("DEPRECATION")
-    private fun requestAudioFocus() {
-        if (focusHeld) return
-        val result = audioManager.requestAudioFocus(
-            focusListener,
-            AudioManager.STREAM_VOICE_CALL,
-            AudioManager.AUDIOFOCUS_GAIN,
-        )
-        focusHeld = result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
-        if (!focusHeld) {
-            emitEvent(mapOf("type" to "engineFailure", "reason" to "音频焦点被拒绝"))
+    /**
+     * 请求被系统拒绝（焦点被锁定，比如来电）时的退避重试。
+     *
+     * 只有"回到前台重取焦点"这条路径会安排它；普通媒体抢占不重试 ——
+     * 对方没放手之前重取只会把它顶掉。
+     */
+    private val focusRetryRunnable = object : Runnable {
+        override fun run() {
+            if (!audioRunning || focusHeld) return
+            focusRetryDelayMs = (focusRetryDelayMs * 2).coerceAtMost(FOCUS_RETRY_MAX_MS)
+            requestAudioFocus(quiet = true)
         }
     }
 
-    @Suppress("DEPRECATION")
+    private fun scheduleFocusRetry() {
+        mainHandler.removeCallbacks(focusRetryRunnable)
+        mainHandler.postDelayed(focusRetryRunnable, focusRetryDelayMs)
+    }
+
+    private fun resetFocusRetry() {
+        mainHandler.removeCallbacks(focusRetryRunnable)
+        focusRetryDelayMs = FOCUS_RETRY_MS
+    }
+
+    private fun buildFocusRequest(): AudioFocusRequest =
+        AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build(),
+            )
+            .setAcceptsDelayedFocusGain(true)
+            .setOnAudioFocusChangeListener(focusListener, mainHandler)
+            .build()
+
+    private fun requestAudioFocus(quiet: Boolean = false) {
+        if (focusHeld) return
+        val request = focusRequest ?: buildFocusRequest().also { focusRequest = it }
+        when (audioManager.requestAudioFocus(request)) {
+            AudioManager.AUDIOFOCUS_REQUEST_GRANTED -> {
+                focusHeld = true
+                resetFocusRetry()
+                // 重新 request 拿到的是"直接授予"，系统不会回调 GAIN。
+                // 不在这里补一条恢复事件，Dart 会一直停在暂停状态。
+                if (recoveringFocus) {
+                    recoveringFocus = false
+                    restoreRoutingForResume()
+                    emitEvent(mapOf("type" to "interruptionEnded", "shouldResume" to true))
+                }
+            }
+
+            // 焦点被系统锁住（通话/紧急广播）时才会走到这里：请求排队，
+            // 对方让出后系统回调 GAIN。
+            AudioManager.AUDIOFOCUS_REQUEST_DELAYED -> resetFocusRetry()
+
+            else -> {
+                focusHeld = false
+                if (!quiet) {
+                    emitEvent(mapOf("type" to "engineFailure", "reason" to "音频焦点被拒绝"))
+                }
+                scheduleFocusRetry()
+            }
+        }
+    }
+
     private fun abandonAudioFocus() {
-        if (!focusHeld) return
-        audioManager.abandonAudioFocus(focusListener)
+        resetFocusRetry()
+        // **不要**重置 recoveringFocus：切调试配置会 stopAudio→startAudio
+        // 重新申请焦点，直接授予时不会再回调 GAIN，得靠这个标志补发恢复事件。
+        // 延迟中的请求也要撤掉，所以不能只看 focusHeld。
+        focusRequest?.let { runCatching { audioManager.abandonAudioFocusRequest(it) } }
+        focusRequest = null
         focusHeld = false
     }
 

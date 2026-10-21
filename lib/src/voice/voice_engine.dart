@@ -163,7 +163,8 @@ sealed class EngineEvent {
 class InterruptionBegan extends EngineEvent {
   const InterruptionBegan({required this.transient, required this.canDuck});
 
-  /// false = AUDIOFOCUS_LOSS，永久失去，应当结束会话。
+  /// false = AUDIOFOCUS_LOSS，焦点被外部应用永久接管。
+  /// 不结束会话：暂停听/说，等用户回到 App、重新拿到焦点时恢复。
   final bool transient;
 
   /// true = 可以降音量继续播。

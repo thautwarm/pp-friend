@@ -12,6 +12,7 @@ import 'package:pp_friend/src/brain/brain_client.dart';
 import 'package:pp_friend/src/config/assistant_config.dart';
 import 'package:pp_friend/src/conversation/conversation_controller.dart';
 import 'package:pp_friend/src/storage/memory_message_store.dart';
+import 'package:pp_friend/src/voice/voice_engine.dart';
 
 import 'support/framed_brain.dart';
 import 'support/voice_fakes.dart';
@@ -210,6 +211,26 @@ Future<void> _settle([int rounds = 10]) async {
   for (var i = 0; i < rounds; i++) {
     await pumpEventQueue();
   }
+}
+
+/// 等到条件成立（轮询间隔 20ms），超时才算失败。
+///
+/// 轮询有 500ms 退避，固定 sleep 700ms 在负载高的机器上会假失败；
+/// 这里让测试跟着服务端/轮询的真实节奏走。
+Future<void> _waitUntil(
+  bool Function() condition, {
+  Duration timeout = const Duration(seconds: 5),
+  String reason = '等待条件超时',
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  while (!condition()) {
+    if (DateTime.now().isAfter(deadline)) {
+      throw TimeoutException('$reason（等了 ${timeout.inMilliseconds}ms）');
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    await _settle(1);
+  }
+  await _settle();
 }
 
 Map<String, dynamic> _body(List<int> bytes) =>
@@ -457,11 +478,7 @@ void main() {
       await _settle();
 
       final vod = brains.skipBefore['a']!;
-      expect(
-        vod.whereType<int>(),
-        isNotEmpty,
-        reason: '打断之后的请求要带水位',
-      );
+      expect(vod.whereType<int>(), isNotEmpty, reason: '打断之后的请求要带水位');
       expect(vod.last, isNull, reason: '拿到真回复之后水位要清掉');
 
       expect(
@@ -763,6 +780,137 @@ void main() {
       await controller.switchProfile('p_b');
       await _settle();
       expect(controller.messages.map((m) => m.text), contains('B 的话'));
+    });
+  });
+
+  group('外部音频占用焦点', () {
+    test('永久失去焦点不结束会话，麦克风改喂静音，恢复后重新收音', () async {
+      final engine = FakeVoiceEngine();
+      final segmenter = FakeSegmenter();
+      final controller = await _boot(_FakeBrains(), engine, segmenter);
+      addTearDown(controller.dispose);
+
+      final voiced = Uint8List.fromList(List<int>.filled(1920, 7));
+
+      engine.eventCtrl.add(
+        const InterruptionBegan(transient: false, canDuck: false),
+      );
+      await _settle();
+
+      expect(controller.active, isTrue, reason: '切去 B 站不该结束会话');
+
+      engine.micCtrl.add(voiced);
+      await pumpEventQueue();
+      expect(
+        segmenter.frames.last.every((b) => b == 0),
+        isTrue,
+        reason: '外部音频期间不能把视频声音当成用户说话',
+      );
+
+      engine.eventCtrl.add(const InterruptionEnded(shouldResume: true));
+      await _settle();
+
+      engine.micCtrl.add(voiced);
+      await pumpEventQueue();
+      expect(
+        segmenter.frames.last.every((b) => b == 0),
+        isFalse,
+        reason: '焦点回来之后要恢复正常收音',
+      );
+    });
+
+    test('暂停期间到达的回复只上屏，不播；恢复后才播', () async {
+      final engine = FakeVoiceEngine()
+        ..opusUpstream = true
+        ..decodedPcm = Uint8List(2400)
+        ..decodedRate = 48000;
+      final brains = _FakeBrains();
+      final controller = await _boot(brains, engine, FakeSegmenter());
+      addTearDown(controller.dispose);
+
+      engine.eventCtrl.add(
+        const InterruptionBegan(transient: false, canDuck: false),
+      );
+      await _settle();
+
+      brains.queue('a', text: '视频期间的消息', audio: const [1, 2, 3, 4]);
+      // 等真正的丢弃发生，而不是猜轮询的退避时间。
+      await _waitUntil(
+        () => controller.log.any((e) => e.message.contains('这条先不播')),
+        reason: '暂停期间的回复应该被丢弃',
+      );
+
+      expect(engine.playbackPushes, 0, reason: '不能盖在视频声音上');
+      expect(
+        controller.messages.map((m) => m.text),
+        contains('视频期间的消息'),
+        reason: '文字还是要上屏',
+      );
+      expect(
+        controller.focused!.pendingUnheardText,
+        contains('视频期间的消息'),
+        reason: '没播出来的回复要记账，等下次上传告诉 brain',
+      );
+
+      engine.eventCtrl.add(const InterruptionEnded(shouldResume: true));
+      await pumpEventQueue();
+      brains.queue('a', text: '恢复后的消息', audio: const [1, 2, 3, 4]);
+      await _waitUntil(() => engine.playbackPushes > 0, reason: '焦点恢复后新回复应该播放');
+
+      expect(engine.playbackPushes, greaterThan(0));
+    });
+
+    test('失焦时原生缓冲里没播完的声音要清掉', () async {
+      final engine = FakeVoiceEngine()
+        ..opusUpstream = true
+        ..decodedPcm = Uint8List(2400)
+        ..decodedRate = 48000;
+      final brains = _FakeBrains();
+      final controller = await _boot(brains, engine, FakeSegmenter());
+      addTearDown(controller.dispose);
+
+      brains.queue('a', text: '正在播的一条', audio: const [1, 2, 3, 4]);
+      await _waitUntil(() => engine.playbackPushes > 0, reason: '回复应该先播起来');
+      await _settle();
+
+      // Dart 侧的推送已经结束，声音还在原生 FIFO 里；统计缓存每 500ms
+      // 才刷一次，这时可能还是 0。暂停不能靠缓存判断"有没有在播"。
+      engine.backlogFrames = 50;
+      engine.eventCtrl.add(
+        const InterruptionBegan(transient: false, canDuck: false),
+      );
+      await _settle();
+
+      expect(engine.flushCount, 1, reason: '失焦必须清掉原生播放缓冲');
+      expect(
+        controller.focused!.pendingUnheardText,
+        contains('正在播的一条'),
+        reason: '没听完的那条要算没听到',
+      );
+    });
+
+    test('外部音频期间切出来的句子直接丢，不上传', () async {
+      final engine = FakeVoiceEngine()..opusUpstream = true;
+      final segmenter = FakeSegmenter();
+      final controller = await _boot(_FakeBrains(), engine, segmenter);
+      addTearDown(controller.dispose);
+
+      engine.eventCtrl.add(
+        const InterruptionBegan(transient: false, canDuck: false),
+      );
+      await _settle();
+
+      // 先喂一帧，让 controller 把断句回调挂到 fake 上。
+      engine.micCtrl.add(_frame);
+      await pumpEventQueue();
+      segmenter.emit(_segment());
+      await _settle();
+
+      expect(engine.encodedSampleRates, isEmpty, reason: '不能把外部声音传上去');
+      expect(
+        controller.log.any((e) => e.message.contains('外部音频占用中，丢掉一段')),
+        isTrue,
+      );
     });
   });
 }

@@ -464,6 +464,13 @@ class ConversationController extends ChangeNotifier {
   bool _userSpeaking = false;
   bool get userSpeaking => _userSpeaking;
 
+  /// 外部应用（视频、音乐、通话…）拿走了音频焦点。
+  ///
+  /// 这时候不能结束会话：用户只是切去看了个视频，回来还要接着说。做法是
+  /// 暂停"听"和"说"——麦克风帧喂静音，新回复只上屏不播——但轮询和前台
+  /// 服务都保持不动。用户回到本 App、原生重新拿到焦点时恢复。
+  bool _externalAudioSuspended = false;
+
   /// AI 正在出声。
   bool _speaking = false;
 
@@ -698,6 +705,9 @@ class ConversationController extends ChangeNotifier {
   StreamSubscription<Uint8List>? _micSub;
   StreamSubscription<AudioLevels>? _levelSub;
   StreamSubscription<EngineEvent>? _eventSub;
+
+  /// 启动窗口（startAudio 到 _active 置位）专用的焦点监听。
+  StreamSubscription<EngineEvent>? _startupEventSub;
   Timer? _statsTimer;
 
   /// 播放代号。清空队列时自增，用来作废在途的音频分块。
@@ -846,6 +856,15 @@ class ConversationController extends ChangeNotifier {
       // 的话，用户关掉开关后重开一次会话，值又回到原生的默认了。
       await _engine.setVolumeKeyClearsQueue(_config.volumeKeyClearsQueue);
 
+      // 事件订阅必须早于 startAudio：焦点请求就在 startAudio 里发出，
+      // 订阅晚了会漏掉启动窗口里的 LOSS（EventChannel 没监听时原生直接丢事件）。
+      //
+      // 启动窗口只关心焦点事件；别的处理器（比如 MicSilentlyDead 会调 stop）
+      // 在 _active 置位前跑进来会打断启动流程，所以先用一个只记焦点的监听，
+      // 等会话真正起来再换成完整的处理器。
+      _externalAudioSuspended = false;
+      _startupEventSub = _engine.events.listen(_onStartupEngineEvent);
+
       final format = await _engine.startAudio();
       _format = format;
       _append('音频链路已开启：$format');
@@ -872,12 +891,16 @@ class ConversationController extends ChangeNotifier {
 
       _micSub = _engine.micPcm.listen(_onMicFrame);
       _levelSub = _engine.levels.listen(_onLevels);
-      _eventSub = _engine.events.listen(_onEngineEvent);
 
       _statsTimer = Timer.periodic(
         const Duration(milliseconds: 500),
         (_) => unawaited(_refreshStats()),
       );
+
+      // 正式处理器接管。启动监听**不取消**：`events` 是缓存的广播流，
+      // 两个监听共用同一个 EventChannel 订阅，反复 cancel/listen 反而会在
+      // 原生 onCancel/onListen 之间丢事件。启动监听在 _active 之后自己让路。
+      _eventSub = _engine.events.listen(_onEngineEvent);
 
       // **不要把它归零。** 上一轮可能还有一个卡在原生解码里的 push，
       // 它捕获的是旧 epoch；归零之后新会话又从 0 开始，旧 push 回来时
@@ -955,7 +978,9 @@ class ConversationController extends ChangeNotifier {
 
     try {
       segmenter.feed(
-        (_micMuted || _shouldMuteMic()) ? _silence(frame.length) : frame,
+        (_micMuted || _externalAudioSuspended || _shouldMuteMic())
+            ? _silence(frame.length)
+            : frame,
         onSpeechStart: _onSpeechStart,
         onUtterance: _onUtterance,
         onFiltered: _onFilteredSegment,
@@ -1071,11 +1096,14 @@ class ConversationController extends ChangeNotifier {
     _bargeInFired = false;
     notifyListeners();
 
-    // 闭麦期间切出来的段直接丢。喂的是静音，正常切不出来；但模型里可能还挂着
-    // 闭麦前那半句，会在切到静音的瞬间收尾 —— 宁可丢掉，也不要在这时候
-    // 冒一个上传出去（"闭麦就一个字节都不上去"必须是硬保证，不能靠推理）。
-    if (_micMuted) {
-      _append('闭麦中，丢掉一段 ${segment.durationSeconds.toStringAsFixed(1)}s');
+    // 闭麦或外部音频占用期间切出来的段直接丢。喂的是静音，正常切不出来；
+    // 但模型里可能还挂着暂停前那半句，会在切到静音的瞬间收尾 —— 宁可丢掉，
+    // 也不要把外部应用的声音当成用户说的话传上去。
+    if (_micMuted || _externalAudioSuspended) {
+      _append(
+        '${_externalAudioSuspended ? "外部音频占用中" : "闭麦中"}，'
+        '丢掉一段 ${segment.durationSeconds.toStringAsFixed(1)}s',
+      );
       return;
     }
 
@@ -1156,12 +1184,12 @@ class ConversationController extends ChangeNotifier {
         runtime.pendingHeardMs = remaining > 0 ? remaining : null;
       }
       final leftUnheard = runtime.pendingUnheardText;
-      if (leftUnheard != null) {
-        if (unheard != null && leftUnheard.startsWith(unheard)) {
+      if (leftUnheard != null && unheard != null) {
+        // 只剥掉这次确实带上去的前缀。`unheard == null` 时上传期间新攒的
+        // 那些字一笔都没报过，清掉就是凭空吞账。
+        if (leftUnheard.startsWith(unheard)) {
           final rest = leftUnheard.substring(unheard.length);
           runtime.pendingUnheardText = rest.isEmpty ? null : rest;
-        } else if (unheard == null) {
-          runtime.pendingUnheardText = null;
         }
       }
 
@@ -1203,6 +1231,15 @@ class ConversationController extends ChangeNotifier {
     BrainReplyStart start,
   ) async {
     if (!_active) return;
+
+    // 外部应用在出声（用户切去看视频/听歌了）：这条只上屏，不播。
+    // 声音留到用户回来再说——现在念出来只会盖在视频上，而且整条也没人听。
+    if (_externalAudioSuspended) {
+      _appendUnheard(spokenText(start.text));
+      _append('外部音频占用中，这条先不播（整条算没听到）');
+      await stream.cancel();
+      return;
+    }
 
     final ledger = _PlayingReply(text: start.text, stream: stream);
     _activeReply = stream;
@@ -1265,11 +1302,7 @@ class ConversationController extends ChangeNotifier {
   }
 
   /// 喂一块 Ogg 字节，解出来的 PCM 立刻推下去。
-  Future<void> _feedOgg(
-    _PlayingReply ledger,
-    Uint8List ogg,
-    int epoch,
-  ) async {
+  Future<void> _feedOgg(_PlayingReply ledger, Uint8List ogg, int epoch) async {
     final format = _format;
     if (format == null) return;
 
@@ -1389,12 +1422,12 @@ class ConversationController extends ChangeNotifier {
   ///
   /// 触发方式：通知栏「停止说话」按钮（覆盖后台/锁屏），
   /// 或前台的音量减键（后台收不到，由通知按钮补上）。
-  Future<void> clearPlayback() async {
+  Future<void> clearPlayback({bool quiet = false}) async {
     if (!_active) return;
     if (_activeReply == null &&
         !_speaking &&
         await _engine.playbackBacklogFrames() == 0) {
-      _append('当前没有在播放');
+      if (!quiet) _append('当前没有在播放');
       return;
     }
     // 通知栏「停止说话」、音量减键都是打断：打断之前排队的消息不要再送。
@@ -1606,7 +1639,8 @@ class ConversationController extends ChangeNotifier {
 
     final discarded = await _engine.flushPlayback(newEpoch: epoch);
     _resetTimeline();
-    notifyListeners();
+    // 这里可能跑在 teardown/dispose 之后（焦点事件触发的清空是 fire-and-forget）。
+    _safeNotify();
 
     await cancelFuture;
     return _InterruptAccount(
@@ -1770,6 +1804,19 @@ class ConversationController extends ChangeNotifier {
     levelsNotifier.value = levels;
   }
 
+  /// 启动窗口里的引擎事件：只记焦点状态，不做任何会改变会话流程的动作。
+  ///
+  /// `_active` 之后交给 [_onEngineEvent]，这里直接让路 —— 两个监听挂在
+  /// 同一个广播流上，谁也不会漏事件。
+  void _onStartupEngineEvent(EngineEvent event) {
+    if (_active) return;
+    if (event is InterruptionBegan && !event.transient) {
+      _externalAudioSuspended = true;
+    } else if (event is InterruptionEnded) {
+      _externalAudioSuspended = false;
+    }
+  }
+
   void _onEngineEvent(EngineEvent event) {
     switch (event) {
       case EndRequested():
@@ -1793,8 +1840,10 @@ class ConversationController extends ChangeNotifier {
 
       case InterruptionBegan(:final transient, :final canDuck):
         if (!transient) {
-          _append('音频焦点被永久抢占，结束会话');
-          unawaited(stop());
+          // B 站之类的播放器会永久拿走焦点。**不能结束会话** —— 用户只是
+          // 切去看视频，回来还要接着说。暂停听/说，轮询和前台服务保持。
+          _append('音频焦点被外部应用接管，暂停语音（连接保持，回本应用后继续）');
+          unawaited(_suspendForExternalAudio());
         } else if (canDuck) {
           _append('音频焦点被短暂抢占（可降音量继续）');
         } else {
@@ -1802,8 +1851,38 @@ class ConversationController extends ChangeNotifier {
         }
 
       case InterruptionEnded(:final shouldResume):
+        final wasSuspended = _externalAudioSuspended;
+        _externalAudioSuspended = false;
         _append('音频焦点已恢复（resume=$shouldResume）');
+        if (wasSuspended) {
+          _append('焦点已恢复，继续对话');
+          notifyListeners();
+        }
     }
+  }
+
+  /// 外部应用接管音频焦点：暂停听和说，但**不结束会话**。
+  Future<void> _suspendForExternalAudio() async {
+    if (!_active) {
+      // 启动过程中就失焦：只把状态记上，等 start() 走到 _active 之后
+      // 麦克风自然喂静音。此时还没有任何播放，不需要清。
+      _externalAudioSuspended = true;
+      return;
+    }
+    if (_externalAudioSuspended) return;
+    _externalAudioSuspended = true;
+    _userSpeaking = false;
+    _speechRunMs = 0;
+    _bargeInFired = false;
+    notifyListeners();
+
+    // 正在播的这条当作没听完：清空播放、把已听到的位置和没听到的文字
+    // 记到账上，下次上传时告诉 brain。
+    //
+    // **不在这里判断 speaking / _backlogFrames**：后者每 500ms 才刷一次，
+    // 短回复的尾巴可能只剩原生缓冲，缓存值还是 0。clearPlayback 自己会
+    // 重新问原生；真没在播就静默返回。
+    await clearPlayback(quiet: true);
   }
 
   // ---------------------------------------------------------------- 调试配置
@@ -2001,6 +2080,8 @@ class ConversationController extends ChangeNotifier {
     _levelSub = null;
     await _eventSub?.cancel();
     _eventSub = null;
+    await _startupEventSub?.cancel();
+    _startupEventSub = null;
 
     _speakQueue?.dispose();
     _speakQueue = null;
@@ -2029,6 +2110,7 @@ class ConversationController extends ChangeNotifier {
 
     _format = null;
     _userSpeaking = false;
+    _externalAudioSuspended = false;
     _speechRunMs = 0;
     _bargeInFired = false;
     _speaking = false;
@@ -2087,12 +2169,15 @@ class ConversationController extends ChangeNotifier {
     final mic = _micSub;
     final level = _levelSub;
     final event = _eventSub;
+    final startup = _startupEventSub;
     _micSub = null;
     _levelSub = null;
     _eventSub = null;
+    _startupEventSub = null;
     if (mic != null) unawaited(mic.cancel());
     if (level != null) unawaited(level.cancel());
     if (event != null) unawaited(event.cancel());
+    if (startup != null) unawaited(startup.cancel());
   }
 
   @override
