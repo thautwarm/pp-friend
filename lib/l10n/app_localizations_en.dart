@@ -585,4 +585,125 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get jumpToBottom => 'Jump to latest';
+
+  @override
+  String get onboardingTitle => 'Permissions';
+
+  @override
+  String get onboardingIntro =>
+      'Before the first conversation, turn on the items below. You can come back to this page from Settings anytime.';
+
+  @override
+  String get microphonePermission => 'Microphone';
+
+  @override
+  String get microphonePermissionBody =>
+      'Without the microphone, the app cannot hear you.';
+
+  @override
+  String get permissionGranted => 'Allowed';
+
+  @override
+  String get permissionDenied => 'Denied';
+
+  @override
+  String get permissionRestricted => 'Restricted by the system';
+
+  @override
+  String get permissionNotDetermined => 'Not requested yet';
+
+  @override
+  String get permissionUnknown => 'Unknown';
+
+  @override
+  String get requestPermission => 'Request permission';
+
+  @override
+  String get openSystemSettings => 'Open System Settings';
+
+  @override
+  String get localNetworkPermission => 'Local network';
+
+  @override
+  String get localNetworkPermissionBody =>
+      'Since macOS 15, reaching a brain on your LAN requires separate permission. Other platforms do not have this.';
+
+  @override
+  String get localNetworkReady => 'Allowed, the brain is reachable';
+
+  @override
+  String get localNetworkUnavailable =>
+      'Not allowed, or the brain is unreachable';
+
+  @override
+  String get localNetworkNotConfigured => 'Set a brain address first';
+
+  @override
+  String get localNetworkUnsupported => 'Not needed on this platform';
+
+  @override
+  String get checkNow => 'Check';
+
+  @override
+  String get checking => 'Checking…';
+
+  @override
+  String get setBrainAddress => 'Set brain address';
+
+  @override
+  String get onboardingStart => 'Start using it';
+
+  @override
+  String get permissionCheckEntry => 'Permissions';
+
+  @override
+  String get permissionCheckEntrySubtitle => 'Microphone, local network';
+
+  @override
+  String get permissionRequestFailed =>
+      'Request failed; enable it in System Settings';
+
+  @override
+  String get brainEndpointTitle => 'Brain address';
+
+  @override
+  String get brainBaseUrlLabel => 'Base URL';
+
+  @override
+  String get saveAndCheck => 'Save and check';
+
+  @override
+  String get brainNotConfigured => 'Fill in Base URL and brain_id first';
+
+  @override
+  String get notChecked => 'Not checked yet';
+
+  @override
+  String brainHttpOk(int status) {
+    return 'HTTP reachable ($status)';
+  }
+
+  @override
+  String get brainHttpTimeout => 'Connection timed out';
+
+  @override
+  String brainHttpError(String error) {
+    return 'Connection failed: $error';
+  }
+
+  @override
+  String get invalidBrainUrl =>
+      'The address must start with http:// or https://';
+
+  @override
+  String get micSettingsPath =>
+      'System Settings → Privacy & Security → Microphone → enable pp_friend';
+
+  @override
+  String get localNetworkSettingsPath =>
+      'System Settings → Privacy & Security → Local Network → enable pp_friend';
+
+  @override
+  String get continueBlocked =>
+      'Allow the microphone, verify the brain address, and pass the local network check to continue';
 }

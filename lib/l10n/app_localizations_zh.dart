@@ -563,4 +563,117 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get jumpToBottom => '回到底部';
+
+  @override
+  String get onboardingTitle => '权限检查';
+
+  @override
+  String get onboardingIntro => '第一次用之前，把下面这些打开；以后也可以在设置里重新检查。';
+
+  @override
+  String get microphonePermission => '麦克风';
+
+  @override
+  String get microphonePermissionBody => '没有麦克风就没法听你说话。';
+
+  @override
+  String get permissionGranted => '已允许';
+
+  @override
+  String get permissionDenied => '被拒绝';
+
+  @override
+  String get permissionRestricted => '被系统限制';
+
+  @override
+  String get permissionNotDetermined => '还没申请';
+
+  @override
+  String get permissionUnknown => '未知';
+
+  @override
+  String get requestPermission => '申请权限';
+
+  @override
+  String get openSystemSettings => '打开系统设置';
+
+  @override
+  String get localNetworkPermission => '本地网络';
+
+  @override
+  String get localNetworkPermissionBody =>
+      'macOS 15 起，访问局域网里的 brain 需要单独授权；其他平台没有这一项。';
+
+  @override
+  String get localNetworkReady => '已允许，能连上 brain';
+
+  @override
+  String get localNetworkUnavailable => '未允许，或者 brain 连不上';
+
+  @override
+  String get localNetworkNotConfigured => '先在设置里填好 brain 地址';
+
+  @override
+  String get localNetworkUnsupported => '当前平台不需要';
+
+  @override
+  String get checkNow => '检测';
+
+  @override
+  String get checking => '检测中…';
+
+  @override
+  String get setBrainAddress => '去填 brain 地址';
+
+  @override
+  String get onboardingStart => '开始使用';
+
+  @override
+  String get permissionCheckEntry => '权限检查';
+
+  @override
+  String get permissionCheckEntrySubtitle => '麦克风、本地网络';
+
+  @override
+  String get permissionRequestFailed => '申请没成功，去系统设置里手动打开';
+
+  @override
+  String get brainEndpointTitle => 'brain 地址';
+
+  @override
+  String get brainBaseUrlLabel => 'Base URL';
+
+  @override
+  String get saveAndCheck => '保存并检测';
+
+  @override
+  String get brainNotConfigured => '先填 Base URL 和 brain_id';
+
+  @override
+  String get notChecked => '还没检测';
+
+  @override
+  String brainHttpOk(int status) {
+    return 'HTTP 已连通（$status）';
+  }
+
+  @override
+  String get brainHttpTimeout => '连接超时';
+
+  @override
+  String brainHttpError(String error) {
+    return '连接失败：$error';
+  }
+
+  @override
+  String get invalidBrainUrl => '地址要以 http:// 或 https:// 开头';
+
+  @override
+  String get micSettingsPath => '系统设置 → 隐私与安全性 → 麦克风 → 打开 pp_friend';
+
+  @override
+  String get localNetworkSettingsPath => '系统设置 → 隐私与安全性 → 本地网络 → 打开 pp_friend';
+
+  @override
+  String get continueBlocked => '麦克风、brain 地址和本地网络都通过之后才能继续';
 }

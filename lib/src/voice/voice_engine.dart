@@ -228,6 +228,14 @@ abstract class VoiceEngine {
   Future<void> stopService();
   Future<bool> serviceRunning();
 
+  /// 联网前的平台准备。默认什么也不做。
+  ///
+  /// macOS 15+ 的本地网络权限有个坑：用 BSD socket（Dart 的 HttpClient）
+  /// 直接连内网地址，系统可能既不弹授权框、也不放行，表现为 brain 永远
+  /// 无响应。必须先由 App 自己用 Network.framework 连一次目标地址，把
+  /// 授权框逼出来。Android/iOS 没有这个问题。
+  Future<void> prepareNetworkAccess(String baseUrl) async {}
+
   // ---- 音频链路 ----
 
   Future<AudioFormat> startAudio({int preferredSampleRate = 16000});

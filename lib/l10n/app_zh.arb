@@ -237,5 +237,52 @@
   "orbStart": "开始对话",
   "orbStarting": "正在启动",
   "orbEnd": "结束对话",
-  "jumpToBottom": "回到底部"
+  "jumpToBottom": "回到底部",
+  "onboardingTitle": "权限检查",
+  "onboardingIntro": "第一次用之前，把下面这些打开；以后也可以在设置里重新检查。",
+  "microphonePermission": "麦克风",
+  "microphonePermissionBody": "没有麦克风就没法听你说话。",
+  "permissionGranted": "已允许",
+  "permissionDenied": "被拒绝",
+  "permissionRestricted": "被系统限制",
+  "permissionNotDetermined": "还没申请",
+  "permissionUnknown": "未知",
+  "requestPermission": "申请权限",
+  "openSystemSettings": "打开系统设置",
+  "localNetworkPermission": "本地网络",
+  "localNetworkPermissionBody": "macOS 15 起，访问局域网里的 brain 需要单独授权；其他平台没有这一项。",
+  "localNetworkReady": "已允许，能连上 brain",
+  "localNetworkUnavailable": "未允许，或者 brain 连不上",
+  "localNetworkNotConfigured": "先在设置里填好 brain 地址",
+  "localNetworkUnsupported": "当前平台不需要",
+  "checkNow": "检测",
+  "checking": "检测中…",
+  "setBrainAddress": "去填 brain 地址",
+  "onboardingStart": "开始使用",
+  "permissionCheckEntry": "权限检查",
+  "permissionCheckEntrySubtitle": "麦克风、本地网络",
+  "permissionRequestFailed": "申请没成功，去系统设置里手动打开",
+  "brainEndpointTitle": "brain 地址",
+  "brainBaseUrlLabel": "Base URL",
+  "brainIdLabel": "brain_id",
+  "saveAndCheck": "保存并检测",
+  "brainNotConfigured": "先填 Base URL 和 brain_id",
+  "notChecked": "还没检测",
+  "brainHttpOk": "HTTP 已连通（{status}）",
+  "@brainHttpOk": {
+    "placeholders": {
+      "status": {"type": "int"}
+    }
+  },
+  "brainHttpTimeout": "连接超时",
+  "brainHttpError": "连接失败：{error}",
+  "@brainHttpError": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+  "invalidBrainUrl": "地址要以 http:// 或 https:// 开头",
+  "micSettingsPath": "系统设置 → 隐私与安全性 → 麦克风 → 打开 pp_friend",
+  "localNetworkSettingsPath": "系统设置 → 隐私与安全性 → 本地网络 → 打开 pp_friend",
+  "continueBlocked": "麦克风、brain 地址和本地网络都通过之后才能继续"
 }

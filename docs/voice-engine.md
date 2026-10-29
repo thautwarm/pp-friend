@@ -99,6 +99,49 @@ VAD / 打断判定由 Dart（Rust FFI）负责，原生只提供 `micPcm` 和 `m
 
 ---
 
+## macOS 实现说明
+
+macOS 走的是**同一套 Dart 契约和通道名**，原生实现在 `macos/Runner/Voice/`：
+
+| 文件 | 职责 |
+| --- | --- |
+| `VoiceEnginePlugin.swift` | 四条 channel、方法分发、麦克风权限、Ogg 解码串行队列 |
+| `MacVoiceEngine.swift` | AVAudioEngine 采集/播放图、VPIO、epoch/flush/head/backlog |
+| `AudioSupport.swift` | `MicFramer`、`PlaybackTimeline`、RMS —— 不依赖 AVFoundation |
+| `OggOpusCodec.swift` | 流式 Ogg Opus 解码、上行 Ogg Opus 编码（libopus + libogg） |
+
+关键语义（以后 Windows/Linux 照这个实现）：
+
+- 采集固定切成 **20ms 一帧的 mono PCM16LE**；`format.channels` 恒为 1，
+  `framesPerChunk = sampleRate / 50`。
+- 播放块带 `epoch`，小于当前值的直接丢；`flushPlayback(newEpoch)` 抬高 epoch、
+  清空设备缓冲、播放头归零，并返回没播出去的帧数。
+- `playbackBacklogFrames = scheduled - played`，包含播放节点内部缓冲；
+  `playbackHeadMs` 从 `AVAudioPlayerNode.playerTime(forNodeTime:)` 推算。
+- 电平 ~30Hz：mic 用 VPIO 处理后的输入，playback 用 mainMixer 混音后的输出；
+  100ms 没有播放数据报 `-120`。
+- macOS 没有音频焦点：别的 App 放声音不会打断我们；只有设备变化/睡眠唤醒
+  会补一对 `interruptionBegan(transient=true)` / `interruptionEnded`。
+- `startService`/`stopService` 是 no-op；`setVolumeKeyClearsQueue` 只存值。
+- 「停止说话」「结束对话」目前没有 macOS 菜单入口，这两个事件不会触发。
+
+构建：
+
+```bash
+bash tools/build_opus_macos.sh     # libopus/libogg → macos/Vendor（静态）
+bash tools/build_rust_macos.sh     # Rust dylib + ORT → macos/Frameworks
+flutter build macos --release
+```
+
+Xcode 的 Build Phases 会自动跑这两个脚本，并把 dylib 嵌进
+`Contents/Frameworks`。Rust/ORT 的查找路径在 `AppDelegate` 里通过
+`FRB_DART_LOAD_EXTERNAL_LIBRARY_NATIVE_LIB_DIR` 和 `ORT_DYLIB_PATH` 设置，
+Dart 侧没有 macOS 分支。
+
+平台分支只允许出现在两个地方：`lib/src/voice/mic_permission.dart`（macOS
+用原生 `AVCaptureDevice`，其余平台回落 `permission_handler`）和上面的原生
+runner。controller/UI 不应该出现 `Platform.isMacOS`。
+
 ## iOS 以后要补什么
 
 | Dart 接口 | Android 实现 | iOS 实现 |

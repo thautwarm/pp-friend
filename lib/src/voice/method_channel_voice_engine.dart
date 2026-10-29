@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/services.dart';
 
+import 'network_check.dart';
 import 'voice_engine.dart';
 
 /// [VoiceEngine] 的 MethodChannel 实现。
@@ -85,6 +86,28 @@ class MethodChannelVoiceEngine implements VoiceEngine {
   @override
   Future<bool> serviceRunning() async =>
       await _method.invokeMethod<bool>('serviceRunning') ?? false;
+
+  @override
+  Future<void> prepareNetworkAccess(String baseUrl) async {
+    final uri = Uri.tryParse(baseUrl.trim());
+    if (uri == null || uri.host.isEmpty) return;
+    if (!looksLikeLocalNetworkHost(uri.host)) return;
+    final port = uri.hasPort ? uri.port : (uri.scheme == 'https' ? 443 : 80);
+    try {
+      await _method.invokeMethod<String>('probeLocalNetwork', {
+        'host': uri.host,
+        'port': port,
+        // 5 秒足够用户看一眼系统弹窗；不弹的时候也别把启动卡太久。
+        'timeoutMs': 5000,
+      });
+    } on MissingPluginException {
+      // 其他平台没实现这个方法：本地网络权限只在 macOS 15+ 上存在。
+    } on PlatformException {
+      // 探测失败不代表会话一定失败（比如 brain 只是暂时没开），
+      // 真正的请求失败会走 brainError，不在这里拦。
+    }
+  }
+
 
   // ------------------------------------------------------------ 音频链路
 

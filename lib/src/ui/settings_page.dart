@@ -10,6 +10,7 @@ import '../../l10n/app_localizations.dart';
 import '../config/assistant_config.dart';
 import '../conversation/conversation_controller.dart';
 import '../i18n/locale_controller.dart';
+import 'onboarding_page.dart';
 import 'profile_editor.dart';
 import 'widgets/settings_widgets.dart';
 
@@ -454,6 +455,8 @@ class _SettingsPageState extends State<SettingsPage>
       children: [
         _languageSection(l10n),
         const SizedBox(height: 16),
+        _permissionsEntry(theme, l10n),
+        const SizedBox(height: 16),
         SettingsSection(
           title: l10n.localSegmentation,
           children: [
@@ -583,6 +586,23 @@ class _SettingsPageState extends State<SettingsPage>
         const SizedBox(height: 16),
         _notice(theme, l10n),
       ],
+    );
+  }
+
+  Widget _permissionsEntry(ThemeData theme, AppLocalizations l10n) {
+    return Card(
+      margin: EdgeInsets.zero,
+      child: ListTile(
+        leading: const Icon(Icons.verified_user_outlined),
+        title: Text(l10n.permissionCheckEntry),
+        subtitle: Text(l10n.permissionCheckEntrySubtitle),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => OnboardingPage(controller: widget.controller),
+          ),
+        ),
+      ),
     );
   }
 

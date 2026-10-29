@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""生成 pp_friend 的应用图标（Android 各密度 + adaptive icon + iOS AppIcon）。
+"""生成 pp_friend 的应用图标（Android 各密度 + adaptive icon + iOS/macOS AppIcon）。
 
 设计：靛蓝→紫罗兰渐变底 + 白色类语音波形（5 根圆头竖条，高度不对称，
 比等宽均衡器更像真实语音包络）。矢量渲染，所以 48px 下依然锐利。
@@ -108,6 +108,42 @@ def background_svg() -> str:
 """
 
 
+def macos_icon_svg() -> str:
+    """macOS 图标：824×824 圆角方形 + 透明边距 + 投影。
+
+    macOS 不会像 iOS/Android 那样替应用裁圆角，图标资产本身就要带边距和
+    圆角；直接拿铺满画布的 Android 图会被系统原样放大，看着比旁边的大一圈。
+    """
+    body = 824
+    x = (CANVAS - body) / 2
+    radius = 185
+    return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{CANVAS}" height="{CANVAS}" viewBox="0 0 {CANVAS} {CANVAS}">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="{GRAD_FROM}"/>
+      <stop offset="100%" stop-color="{GRAD_TO}"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.28" cy="0.18" r="0.75">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.28"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12"
+                    flood-color="#000000" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+  <rect x="{x}" y="{x}" width="{body}" height="{body}" rx="{radius}" ry="{radius}"
+        fill="url(#bg)" filter="url(#shadow)"/>
+  <rect x="{x}" y="{x}" width="{body}" height="{body}" rx="{radius}" ry="{radius}"
+        fill="url(#glow)"/>
+  <rect x="{x + 0.75}" y="{x + 0.75}" width="{body - 1.5}" height="{body - 1.5}"
+        rx="{radius - 0.75}" ry="{radius - 0.75}" fill="none"
+        stroke="#ffffff" stroke-opacity="0.16" stroke-width="1.5"/>
+  {mark_svg(0.82)}
+</svg>
+"""
+
+
 def render(svg: str, out: Path, size: int) -> None:
     out.parent.mkdir(parents=True, exist_ok=True)
     tmp = out.with_suffix(".svg")
@@ -195,8 +231,23 @@ def main() -> int:
         render_from_png(master_full, appicon / filename, px)
         written += 1
 
+    # ---- macOS AppIcon ----
+    # 直接按目标尺寸渲染 SVG，16px 下也比从 1024 缩下来干净。
+    macicon = ROOT / "macos/Runner/Assets.xcassets/AppIcon.appiconset"
+    mac_contents = json.loads((macicon / "Contents.json").read_text())
+    mac_written = 0
+    for entry in mac_contents.get("images", []):
+        filename = entry.get("filename")
+        if not filename:
+            continue
+        size_pt = float(entry["size"].split("x")[0])
+        scale = int(entry["scale"].rstrip("x"))
+        render(macos_icon_svg(), macicon / filename, round(size_pt * scale))
+        mac_written += 1
+
     print(f"Android 传统图标 {len(android_densities)} 个 + adaptive icon")
     print(f"iOS AppIcon {written} 个")
+    print(f"macOS AppIcon {mac_written} 个")
     print(f"源图：{master_full}")
     return 0
 

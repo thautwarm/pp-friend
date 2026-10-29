@@ -237,5 +237,52 @@
   "orbStart": "会話を開始",
   "orbStarting": "起動中",
   "orbEnd": "会話を終了",
-  "jumpToBottom": "最新へ戻る"
+  "jumpToBottom": "最新へ戻る",
+  "onboardingTitle": "権限チェック",
+  "onboardingIntro": "初めて使う前に、下の項目を有効にしてください。あとから設定でいつでも確認できます。",
+  "microphonePermission": "マイク",
+  "microphonePermissionBody": "マイクがないと、あなたの声を聞けません。",
+  "permissionGranted": "許可済み",
+  "permissionDenied": "拒否済み",
+  "permissionRestricted": "システムに制限されています",
+  "permissionNotDetermined": "まだ要求していません",
+  "permissionUnknown": "不明",
+  "requestPermission": "許可を求める",
+  "openSystemSettings": "システム設定を開く",
+  "localNetworkPermission": "ローカルネットワーク",
+  "localNetworkPermissionBody": "macOS 15 以降、LAN 上の brain へのアクセスには別途許可が必要です。他のプラットフォームにはありません。",
+  "localNetworkReady": "許可済み、brain に接続できます",
+  "localNetworkUnavailable": "許可されていないか、brain に接続できません",
+  "localNetworkNotConfigured": "先に設定で brain アドレスを入力してください",
+  "localNetworkUnsupported": "このプラットフォームでは不要です",
+  "checkNow": "確認",
+  "checking": "確認中…",
+  "setBrainAddress": "brain アドレスを設定",
+  "onboardingStart": "使い始める",
+  "permissionCheckEntry": "権限チェック",
+  "permissionCheckEntrySubtitle": "マイク、ローカルネットワーク",
+  "permissionRequestFailed": "許可を取得できませんでした。システム設定で有効にしてください",
+  "brainEndpointTitle": "brain アドレス",
+  "brainBaseUrlLabel": "Base URL",
+  "brainIdLabel": "brain_id",
+  "saveAndCheck": "保存して確認",
+  "brainNotConfigured": "先に Base URL と brain_id を入力してください",
+  "notChecked": "まだ確認していません",
+  "brainHttpOk": "HTTP 接続済み（{status}）",
+  "@brainHttpOk": {
+    "placeholders": {
+      "status": {"type": "int"}
+    }
+  },
+  "brainHttpTimeout": "接続がタイムアウトしました",
+  "brainHttpError": "接続に失敗しました：{error}",
+  "@brainHttpError": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+  "invalidBrainUrl": "アドレスは http:// または https:// で始めてください",
+  "micSettingsPath": "システム設定 → プライバシーとセキュリティ → マイク → pp_friend を有効にする",
+  "localNetworkSettingsPath": "システム設定 → プライバシーとセキュリティ → ローカルネットワーク → pp_friend を有効にする",
+  "continueBlocked": "マイク、brain アドレス、ローカルネットワークの確認がすべて通ると続行できます"
 }

@@ -568,4 +568,119 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get jumpToBottom => '最新へ戻る';
+
+  @override
+  String get onboardingTitle => '権限チェック';
+
+  @override
+  String get onboardingIntro => '初めて使う前に、下の項目を有効にしてください。あとから設定でいつでも確認できます。';
+
+  @override
+  String get microphonePermission => 'マイク';
+
+  @override
+  String get microphonePermissionBody => 'マイクがないと、あなたの声を聞けません。';
+
+  @override
+  String get permissionGranted => '許可済み';
+
+  @override
+  String get permissionDenied => '拒否済み';
+
+  @override
+  String get permissionRestricted => 'システムに制限されています';
+
+  @override
+  String get permissionNotDetermined => 'まだ要求していません';
+
+  @override
+  String get permissionUnknown => '不明';
+
+  @override
+  String get requestPermission => '許可を求める';
+
+  @override
+  String get openSystemSettings => 'システム設定を開く';
+
+  @override
+  String get localNetworkPermission => 'ローカルネットワーク';
+
+  @override
+  String get localNetworkPermissionBody =>
+      'macOS 15 以降、LAN 上の brain へのアクセスには別途許可が必要です。他のプラットフォームにはありません。';
+
+  @override
+  String get localNetworkReady => '許可済み、brain に接続できます';
+
+  @override
+  String get localNetworkUnavailable => '許可されていないか、brain に接続できません';
+
+  @override
+  String get localNetworkNotConfigured => '先に設定で brain アドレスを入力してください';
+
+  @override
+  String get localNetworkUnsupported => 'このプラットフォームでは不要です';
+
+  @override
+  String get checkNow => '確認';
+
+  @override
+  String get checking => '確認中…';
+
+  @override
+  String get setBrainAddress => 'brain アドレスを設定';
+
+  @override
+  String get onboardingStart => '使い始める';
+
+  @override
+  String get permissionCheckEntry => '権限チェック';
+
+  @override
+  String get permissionCheckEntrySubtitle => 'マイク、ローカルネットワーク';
+
+  @override
+  String get permissionRequestFailed => '許可を取得できませんでした。システム設定で有効にしてください';
+
+  @override
+  String get brainEndpointTitle => 'brain アドレス';
+
+  @override
+  String get brainBaseUrlLabel => 'Base URL';
+
+  @override
+  String get saveAndCheck => '保存して確認';
+
+  @override
+  String get brainNotConfigured => '先に Base URL と brain_id を入力してください';
+
+  @override
+  String get notChecked => 'まだ確認していません';
+
+  @override
+  String brainHttpOk(int status) {
+    return 'HTTP 接続済み（$status）';
+  }
+
+  @override
+  String get brainHttpTimeout => '接続がタイムアウトしました';
+
+  @override
+  String brainHttpError(String error) {
+    return '接続に失敗しました：$error';
+  }
+
+  @override
+  String get invalidBrainUrl => 'アドレスは http:// または https:// で始めてください';
+
+  @override
+  String get micSettingsPath =>
+      'システム設定 → プライバシーとセキュリティ → マイク → pp_friend を有効にする';
+
+  @override
+  String get localNetworkSettingsPath =>
+      'システム設定 → プライバシーとセキュリティ → ローカルネットワーク → pp_friend を有効にする';
+
+  @override
+  String get continueBlocked => 'マイク、brain アドレス、ローカルネットワークの確認がすべて通ると続行できます';
 }
