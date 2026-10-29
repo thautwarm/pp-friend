@@ -288,6 +288,25 @@ class _SettingsPageState extends State<SettingsPage>
   }
 
   Widget _profileTab() {
+    if (_profiles.isEmpty) {
+      // 配置是异步读的：App 刚起来、`loadConfig()` 还没跑完时这里就是空的。
+      // 旧代码直接 `_profiles[_index.clamp(0, -1)]`，release 下 build 异常
+      // 只留下一个灰白页面 —— 用户看到的就是"设置打不开"。
+      return Column(
+        children: [
+          _profileTabs(),
+          const Divider(height: 1),
+          Expanded(
+            child: Center(
+              child: Text(
+                AppLocalizations.of(context).noEnabledProfiles,
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
     final profile = _profiles[_index.clamp(0, _profiles.length - 1)];
     return Column(
       children: [
@@ -304,38 +323,59 @@ class _SettingsPageState extends State<SettingsPage>
     );
   }
 
-  /// 档案那一排 tab，末尾一个加号。
+  /// 档案那一排 tab，末尾一个加号。**长按可以拖动调整顺序**。
+  ///
+  /// 这里的顺序就是主界面滑动带上的左右顺序 —— 不是两套独立的排序。
+  /// 用长按而不是直接拖：这排本身要能横向滚动，直接拖会分不清用户在
+  /// 滚列表还是在换位置。
   Widget _profileTabs() {
     final l10n = AppLocalizations.of(context);
     final selected = _index;
     return SizedBox(
       height: 56,
-      child: ListView(
-        controller: _chipScroll,
+      child: ReorderableListView.builder(
+        scrollController: _chipScroll,
         scrollDirection: Axis.horizontal,
+        buildDefaultDragHandles: false,
         padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-        children: [
-          for (var i = 0; i < _profiles.length; i++)
-            Padding(
+        itemCount: _profiles.length,
+        // onReorderItem 已经替我们扣掉了"原项被移走"造成的下标偏移，
+        // 不用再自己 `if (newIndex > oldIndex) newIndex--`。
+        onReorderItem: (oldIndex, newIndex) {
+          unawaited(widget.controller.moveProfile(oldIndex, newIndex));
+        },
+        proxyDecorator: (child, index, animation) => Material(
+          color: Colors.transparent,
+          elevation: 6,
+          shape: const StadiumBorder(),
+          child: child,
+        ),
+        // 加号。用 OutlinedButton 而不是另一个 chip：它是动作不是"某一页"，
+        // 长得一样会让人以为点了会切到一个叫"+"的档案。
+        footer: IconButton.outlined(
+          onPressed: _add,
+          icon: const Icon(Icons.add),
+          tooltip: l10n.newProfileTooltip,
+          visualDensity: VisualDensity.compact,
+        ),
+        itemBuilder: (context, i) {
+          final profile = _profiles[i];
+          return ReorderableDelayedDragStartListener(
+            key: ValueKey('profile-chip-${profile.id}'),
+            index: i,
+            child: Padding(
               // 选中那个挂 key，用来把它滚进视野。同一时刻只有一个，
               // 所以这一个 key 够用。
               key: i == selected ? _chipKey : null,
               padding: const EdgeInsets.only(right: 8),
               child: _profileTabChip(
-                _profiles[i],
+                profile,
                 i == selected,
-                () => _select(_profiles[i]),
+                () => _select(profile),
               ),
             ),
-          // 加号。用 OutlinedButton 而不是另一个 chip：它是动作不是"某一页"，
-          // 长得一样会让人以为点了会切到一个叫"+"的档案。
-          IconButton.outlined(
-            onPressed: _add,
-            icon: const Icon(Icons.add),
-            tooltip: l10n.newProfileTooltip,
-            visualDensity: VisualDensity.compact,
-          ),
-        ],
+          );
+        },
       ),
     );
   }

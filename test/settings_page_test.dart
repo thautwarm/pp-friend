@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/testing.dart';
@@ -142,6 +143,66 @@ void main() {
 
     expect(find.text('b'), findsOneWidget, reason: '切过去看到的是 B 的配置');
     expect(find.text('a'), findsNothing, reason: 'A 的输入框不该还留着');
+  });
+
+  testWidgets('配置还没读回来时打开设置页不会崩', (tester) async {
+    // 故意不 loadConfig/updateConfig：模拟冷启动后立刻点齿轮的那一帧，
+    // 这时 config.profiles 还是空的。旧代码在这里下标越界，release 下
+    // 用户只看到一片灰白。
+    final controller = ConversationController(
+      engine: FakeVoiceEngine(),
+      brainFactory: () => BrainClient(
+        client: MockClient((_) async => throw StateError('不该发请求')),
+      ),
+      history: MemoryMessageStore(),
+      avatars: FakeAvatarStore(),
+      segmenterFactory: ({
+        required int sampleRate,
+        required AssistantConfig config,
+      }) async => FakeSegmenter(),
+    );
+    addTearDown(controller.dispose);
+
+    await _pump(tester, controller);
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('配置'), findsOneWidget, reason: '设置页本身要出来');
+    expect(find.text('没有启用的档案'), findsOneWidget);
+  });
+
+  testWidgets('长按拖动档案 tab 可以调整顺序，焦点不变', (tester) async {
+    final (controller, _) = await _boot();
+    addTearDown(controller.dispose);
+
+    await _pump(tester, controller);
+    expect(controller.config.profiles.map((p) => p.id), ['p_a', 'p_b']);
+
+    // 只在 chip 里面找，别抓到编辑器里同名的文字。
+    Finder chipText(String text) => find.descendant(
+      of: find.byType(ReorderableDelayedDragStartListener),
+      matching: find.text(text),
+    );
+
+    // 长按 A 的名字，拖过 B 再松手。和框架自己测 ReorderableListView
+    // 用的是同一套手势序列：先等长按判定，再移动、松手。
+    final drag = await tester.startGesture(
+      tester.getCenter(chipText('A').last),
+    );
+    await tester.pump(kLongPressTimeout + kPressTimeout);
+    await drag.moveTo(
+      tester.getCenter(chipText('B').last) + const Offset(120, 0),
+    );
+    await tester.pump(kPressTimeout);
+    await drag.up();
+    await tester.pumpAndSettle();
+
+    expect(controller.config.profiles.map((p) => p.id), ['p_b', 'p_a']);
+    expect(controller.config.focusedProfileId, 'p_a', reason: '拖动不该改焦点');
+    // 界面上 B 也确实挪到了 A 左边
+    expect(
+      tester.getTopLeft(chipText('B').last).dx,
+      lessThan(tester.getTopLeft(chipText('A').last).dx),
+    );
   });
 
   testWidgets('切档案之前会把这一屏的改动落盘', (tester) async {

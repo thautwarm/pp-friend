@@ -157,6 +157,18 @@ class AssistantConfig {
     return copyWith(profiles: next);
   }
 
+  /// 把第 [from] 个档案挪到第 [to] 个（[to] 是挪完之后的最终下标）。
+  ///
+  /// 只动顺序：焦点、历史、各档案的配置都不变。滑动带的左右顺序跟着这个列表走。
+  AssistantConfig withProfileMoved(int from, int to) {
+    if (from < 0 || from >= profiles.length) return this;
+    if (to < 0 || to >= profiles.length) return this;
+    if (from == to) return this;
+    final next = List<Profile>.of(profiles);
+    next.insert(to, next.removeAt(from));
+    return copyWith(profiles: next);
+  }
+
   /// 删掉一个档案。
   ///
   /// **只动配置，不动盘上的历史。** 历史是用户的东西，删档案不该顺手

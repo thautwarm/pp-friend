@@ -108,4 +108,49 @@ void main() {
       expect(updated.brain.baseUrl, 'u');
     });
   });
+
+  group('调整档案顺序', () {
+    const config = AssistantConfig(
+      profiles: [
+        Profile(
+          id: 'a',
+          name: 'A',
+          brain: BrainConfig(baseUrl: 'u', brainId: 'a'),
+        ),
+        Profile(
+          id: 'b',
+          name: 'B',
+          brain: BrainConfig(baseUrl: 'u', brainId: 'b'),
+        ),
+        Profile(
+          id: 'c',
+          name: 'C',
+          brain: BrainConfig(baseUrl: 'u', brainId: 'c'),
+        ),
+      ],
+      focusedProfileId: 'b',
+    );
+
+    List<String> ids(AssistantConfig c) => c.profiles.map((p) => p.id).toList();
+
+    test('往后挪：0 → 2', () {
+      expect(ids(config.withProfileMoved(0, 2)), ['b', 'c', 'a']);
+    });
+
+    test('往前挪：2 → 0', () {
+      expect(ids(config.withProfileMoved(2, 0)), ['c', 'a', 'b']);
+    });
+
+    test('焦点和档案内容都不动', () {
+      final moved = config.withProfileMoved(0, 2);
+      expect(moved.focusedProfileId, 'b');
+      expect(moved.profiles.first.name, 'B');
+    });
+
+    test('原地不动、越界都是空操作', () {
+      expect(identical(config.withProfileMoved(1, 1), config), isTrue);
+      expect(identical(config.withProfileMoved(-1, 0), config), isTrue);
+      expect(identical(config.withProfileMoved(0, 3), config), isTrue);
+    });
+  });
 }

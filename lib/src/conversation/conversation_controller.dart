@@ -221,6 +221,10 @@ class ConversationController extends ChangeNotifier {
 
   Future<void> loadConfig() async {
     _config = (await _store.load()).normalized();
+    // 先把配置交给界面：下面读历史、查声纹可能要几百毫秒，全等完再通知的
+    // 话，主界面会一直停在"没有启用的档案"，用户这时候点设置还可能看到
+    // 空列表（旧版本甚至会因为空列表下标越界而整页空白）。
+    _safeNotify();
     await _syncRuntimes();
     await refreshVoiceprint();
     // 先把聚焦档案的历史读出来，这样一打开 App 就看得见上次聊到哪儿了，
@@ -607,6 +611,13 @@ class ConversationController extends ChangeNotifier {
   /// 的话，每个改配置的地方都得自己记得同步运行态。
   Future<void> saveProfile(Profile profile) =>
       updateConfig(_config.withProfile(profile));
+
+  /// 调整档案顺序。焦点不变，只影响滑动带上的左右位置。
+  Future<void> moveProfile(int from, int to) async {
+    final next = _config.withProfileMoved(from, to);
+    if (identical(next, _config)) return;
+    await updateConfig(next);
+  }
 
   /// 删掉一个档案。
   ///
