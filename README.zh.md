@@ -51,13 +51,13 @@
 | UI / 业务 | Flutter（Dart 3.13） |
 | 本地断句 | Rust + Silero VAD，flutter_rust_bridge 2.13 |
 | 声纹门控 | Rust + ECAPA 声纹余弦（int8 ONNX，23 MB）；声纹由 `tools/voiceprint` 网页生成 |
-| 音频引擎 | Android 原生（Kotlin）：AudioRecord / AudioTrack / AEC |
+| 音频引擎 | Android 原生（Kotlin）：AudioRecord / AudioTrack / AEC；macOS 原生（Swift）：AVAudioEngine + VPIO AEC |
 | 上行编码 | Ogg Opus 16 kHz（MediaCodec + MediaMuxer） |
 | 下行解码 | 连续 Ogg Opus 24 kHz（手写增量解析 + MediaCodec）→ 重采样到 16 kHz |
 | 与服务端通信 | HTTP + MessagePack；上行一问一答，下行前导（文本）+ 连续音频流 |
 | 历史落盘 | NDJSON，按 1 MB 分片，只增不删 |
 
-只支持 **Android arm64**，minSdk 29。iOS 的 Dart 契约已就绪，原生侧没写。
+**Android arm64**，minSdk 29；**macOS 14+（Apple Silicon）**也有原生语音引擎（Swift + libopus/libogg + 同一份 Rust VAD）。iOS 的 Dart 契约已就绪，原生侧没写。
 
 ## 构建
 
@@ -74,11 +74,21 @@ flutter build apk --release
 tools/build_rust_android.sh
 ```
 
+macOS（14+，Apple Silicon）。Xcode 的 Build Phases 会自动跑这两个原生依赖脚本：
+
+```bash
+tools/build_opus_macos.sh   # 静态 libopus + libogg → macos/Vendor
+tools/build_rust_macos.sh   # Rust VAD dylib + ONNX Runtime → macos/Frameworks
+flutter build macos --release
+```
+
 ## 发布
 
 GitHub Actions（`.github/workflows/build-release.yml`）会在每次推送到 `main`、
 每个 Pull Request 和手动触发时运行 `flutter analyze`、`flutter test`，
-然后构建 arm64-v8a 的 release APK，并把它作为工作流产物上传。
+然后在 `ubuntu-latest` 上构建 arm64-v8a 的 release APK，在 `macos-14` 上
+构建 Apple Silicon 的 macOS app 并跑 XCTest。两者都作为工作流产物上传，
+但只有 APK 会进入 GitHub Release。
 
 要发布 GitHub Release，推一个标签（和 `pubspec.yaml` 里的版本保持一致）：
 

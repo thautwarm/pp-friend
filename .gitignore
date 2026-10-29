@@ -78,3 +78,10 @@ app.*.map.json
 # 由 tools/fetch_onnxruntime.sh host 按需下载。Android 那份 .so 是入库的，
 # 在 android/app/src/main/jniLibs/ 下。
 /rust/.ort/
+
+# macOS 打包暂存区：由 tools/build_rust_macos.sh 生成，Xcode 构建时再嵌入
+# Contents/Frameworks。二进制不入库（和 Android 的 jniLibs 不同，macOS
+# 产物本机就能构建，没必要把 37MB 的 ORT dylib 提交进去）。
+/macos/Frameworks/
+/macos/Vendor/
+/macos/.build/

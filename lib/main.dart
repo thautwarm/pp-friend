@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 
 import 'l10n/app_localizations.dart';
 import 'src/conversation/conversation_controller.dart';
 import 'src/i18n/locale_controller.dart';
 import 'src/ui/home_page.dart';
+import 'src/voice/mic_permission.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -46,10 +46,9 @@ class _PpFriendAppState extends State<PpFriendApp> {
   /// 麦克风必须给；通知在 Android 13+ 决定前台服务那条常驻通知能否显示，
   /// 被拒绝也不阻断 —— 服务照样跑，只是通知栏看不到。
   Future<bool> _requestPermissions() async {
-    final mic = await Permission.microphone.request();
-    if (!mic.isGranted) return false;
+    if (!await requestMicPermission()) return false;
 
-    await Permission.notification.request();
+    await requestNotificationPermissionIfSupported();
     return true;
   }
 

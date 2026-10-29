@@ -97,6 +97,103 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  macos:
+    name: Analyze, test and build macOS app
+    # 公开仓库上的 macos-14 是 Apple Silicon；本项目的原生依赖只出 arm64。
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.94.1"
+          targets: aarch64-apple-darwin
+
+      - name: Set up Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+
+      - name: Cache native dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            macos/Vendor
+            macos/.build
+            rust/.ort
+          key: macos-native-${{ hashFiles('tools/build_opus_macos.sh', 'tools/fetch_onnxruntime.sh') }}
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test
+
+      - name: Build native dependencies
+        run: |
+          uname -m
+          bash tools/build_opus_macos.sh
+          bash tools/build_rust_macos.sh
+
+      - name: Build release app
+        run: flutter build macos --release
+
+      - name: Run XCTest
+        run: |
+          xcodebuild test \
+            -workspace macos/Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Debug \
+            -destination 'platform=macOS,arch=arm64' \
+            -only-testing:RunnerTests
+
+      - name: Verify bundle
+        run: |
+          set -euo pipefail
+          APP="build/macos/Build/Products/Release/pp_friend.app"
+          FRAMEWORKS="$APP/Contents/Frameworks"
+          test -f "$FRAMEWORKS/librust_lib_pp_friend.dylib"
+          test -f "$FRAMEWORKS/libonnxruntime.dylib"
+          lipo -info "$FRAMEWORKS/librust_lib_pp_friend.dylib" | grep -q arm64
+          lipo -info "$FRAMEWORKS/libonnxruntime.dylib" | grep -q arm64
+          # 构建机的 Homebrew 路径不能漏进产物。
+          if otool -L "$FRAMEWORKS/librust_lib_pp_friend.dylib" | grep -q /opt/homebrew; then
+            echo "librust_lib_pp_friend.dylib 依赖了 Homebrew 库" >&2
+            exit 1
+          fi
+          codesign --verify --deep --strict "$APP"
+
+      - name: Read app version
+        id: version
+        run: |
+          raw="$(sed -n 's/^version:[[:space:]]*//p' pubspec.yaml | head -n1)"
+          echo "name=${raw%%+*}" >> "$GITHUB_OUTPUT"
+
+      - name: Package app
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent \
+            build/macos/Build/Products/Release/pp_friend.app \
+            "pp-friend-${{ steps.version.outputs.name }}-macos-arm64.zip"
+
+      - name: Upload macOS app
+        uses: actions/upload-artifact@v4
+        with:
+          name: pp-friend-${{ steps.version.outputs.name }}-macos-arm64
+          path: pp-friend-${{ steps.version.outputs.name }}-macos-arm64.zip
+          if-no-files-found: error
+          retention-days: 14
+
   release:
     name: Publish GitHub Release
     needs: build
