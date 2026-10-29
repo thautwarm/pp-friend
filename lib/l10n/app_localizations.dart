@@ -1137,6 +1137,222 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'回到底部'**
   String get jumpToBottom;
+
+  /// No description provided for @onboardingTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'权限检查'**
+  String get onboardingTitle;
+
+  /// No description provided for @onboardingIntro.
+  ///
+  /// In zh, this message translates to:
+  /// **'第一次用之前，把下面这些打开；以后也可以在设置里重新检查。'**
+  String get onboardingIntro;
+
+  /// No description provided for @microphonePermission.
+  ///
+  /// In zh, this message translates to:
+  /// **'麦克风'**
+  String get microphonePermission;
+
+  /// No description provided for @microphonePermissionBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'没有麦克风就没法听你说话。'**
+  String get microphonePermissionBody;
+
+  /// No description provided for @permissionGranted.
+  ///
+  /// In zh, this message translates to:
+  /// **'已允许'**
+  String get permissionGranted;
+
+  /// No description provided for @permissionDenied.
+  ///
+  /// In zh, this message translates to:
+  /// **'被拒绝'**
+  String get permissionDenied;
+
+  /// No description provided for @permissionRestricted.
+  ///
+  /// In zh, this message translates to:
+  /// **'被系统限制'**
+  String get permissionRestricted;
+
+  /// No description provided for @permissionNotDetermined.
+  ///
+  /// In zh, this message translates to:
+  /// **'还没申请'**
+  String get permissionNotDetermined;
+
+  /// No description provided for @permissionUnknown.
+  ///
+  /// In zh, this message translates to:
+  /// **'未知'**
+  String get permissionUnknown;
+
+  /// No description provided for @requestPermission.
+  ///
+  /// In zh, this message translates to:
+  /// **'申请权限'**
+  String get requestPermission;
+
+  /// No description provided for @openSystemSettings.
+  ///
+  /// In zh, this message translates to:
+  /// **'打开系统设置'**
+  String get openSystemSettings;
+
+  /// No description provided for @localNetworkPermission.
+  ///
+  /// In zh, this message translates to:
+  /// **'本地网络'**
+  String get localNetworkPermission;
+
+  /// No description provided for @localNetworkPermissionBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'macOS 15 起，访问局域网里的 brain 需要单独授权；其他平台没有这一项。'**
+  String get localNetworkPermissionBody;
+
+  /// No description provided for @localNetworkReady.
+  ///
+  /// In zh, this message translates to:
+  /// **'已允许，能连上 brain'**
+  String get localNetworkReady;
+
+  /// No description provided for @localNetworkUnavailable.
+  ///
+  /// In zh, this message translates to:
+  /// **'未允许，或者 brain 连不上'**
+  String get localNetworkUnavailable;
+
+  /// No description provided for @localNetworkNotConfigured.
+  ///
+  /// In zh, this message translates to:
+  /// **'先在设置里填好 brain 地址'**
+  String get localNetworkNotConfigured;
+
+  /// No description provided for @localNetworkUnsupported.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前平台不需要'**
+  String get localNetworkUnsupported;
+
+  /// No description provided for @checkNow.
+  ///
+  /// In zh, this message translates to:
+  /// **'检测'**
+  String get checkNow;
+
+  /// No description provided for @checking.
+  ///
+  /// In zh, this message translates to:
+  /// **'检测中…'**
+  String get checking;
+
+  /// No description provided for @setBrainAddress.
+  ///
+  /// In zh, this message translates to:
+  /// **'去填 brain 地址'**
+  String get setBrainAddress;
+
+  /// No description provided for @onboardingStart.
+  ///
+  /// In zh, this message translates to:
+  /// **'开始使用'**
+  String get onboardingStart;
+
+  /// No description provided for @permissionCheckEntry.
+  ///
+  /// In zh, this message translates to:
+  /// **'权限检查'**
+  String get permissionCheckEntry;
+
+  /// No description provided for @permissionCheckEntrySubtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'麦克风、本地网络'**
+  String get permissionCheckEntrySubtitle;
+
+  /// No description provided for @permissionRequestFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'申请没成功，去系统设置里手动打开'**
+  String get permissionRequestFailed;
+
+  /// No description provided for @brainEndpointTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'brain 地址'**
+  String get brainEndpointTitle;
+
+  /// No description provided for @brainBaseUrlLabel.
+  ///
+  /// In zh, this message translates to:
+  /// **'Base URL'**
+  String get brainBaseUrlLabel;
+
+  /// No description provided for @saveAndCheck.
+  ///
+  /// In zh, this message translates to:
+  /// **'保存并检测'**
+  String get saveAndCheck;
+
+  /// No description provided for @brainNotConfigured.
+  ///
+  /// In zh, this message translates to:
+  /// **'先填 Base URL 和 brain_id'**
+  String get brainNotConfigured;
+
+  /// No description provided for @notChecked.
+  ///
+  /// In zh, this message translates to:
+  /// **'还没检测'**
+  String get notChecked;
+
+  /// No description provided for @brainHttpOk.
+  ///
+  /// In zh, this message translates to:
+  /// **'HTTP 已连通（{status}）'**
+  String brainHttpOk(int status);
+
+  /// No description provided for @brainHttpTimeout.
+  ///
+  /// In zh, this message translates to:
+  /// **'连接超时'**
+  String get brainHttpTimeout;
+
+  /// No description provided for @brainHttpError.
+  ///
+  /// In zh, this message translates to:
+  /// **'连接失败：{error}'**
+  String brainHttpError(String error);
+
+  /// No description provided for @invalidBrainUrl.
+  ///
+  /// In zh, this message translates to:
+  /// **'地址要以 http:// 或 https:// 开头'**
+  String get invalidBrainUrl;
+
+  /// No description provided for @micSettingsPath.
+  ///
+  /// In zh, this message translates to:
+  /// **'系统设置 → 隐私与安全性 → 麦克风 → 打开 pp_friend'**
+  String get micSettingsPath;
+
+  /// No description provided for @localNetworkSettingsPath.
+  ///
+  /// In zh, this message translates to:
+  /// **'系统设置 → 隐私与安全性 → 本地网络 → 打开 pp_friend'**
+  String get localNetworkSettingsPath;
+
+  /// No description provided for @continueBlocked.
+  ///
+  /// In zh, this message translates to:
+  /// **'麦克风、brain 地址和本地网络都通过之后才能继续'**
+  String get continueBlocked;
 }
 
 class _AppLocalizationsDelegate

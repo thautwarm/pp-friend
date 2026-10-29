@@ -1,6 +1,7 @@
 import AVFoundation
 import Cocoa
 import FlutterMacOS
+import Network
 
 /// 把 macOS 的语音引擎接到 Flutter 上。
 ///
@@ -240,6 +241,13 @@ final class VoiceEnginePlugin {
     case "micPermissionStatus":
       result(Self.micPermissionStatus())
 
+    case "probeLocalNetwork":
+      probeLocalNetwork(args, result: result)
+
+    case "openLocalNetworkSettings":
+      Self.openLocalNetworkSettings()
+      result(true)
+
     case "openMicSettings":
       Self.openMicSettings()
       result(true)
@@ -247,6 +255,72 @@ final class VoiceEnginePlugin {
     default:
       result(FlutterMethodNotImplemented)
     }
+  }
+
+  // ---------------------------------------------------------------- 本地网络
+
+  /// 用 Network.framework 主动连一下目标地址。
+  ///
+  /// macOS 15+ 的本地网络授权只对「App 自己发起的网络请求」弹框；Dart 的
+  /// HttpClient 走 BSD socket，系统可能既不弹框、也直接拒绝（表现为 brain
+  /// 永远无响应）。这里连一下同一地址，把系统弹窗逼出来；授权之后 Dart 的
+  /// 请求就能通。
+  ///
+  /// 返回 "ready" 只代表 TCP 连上了，不代表 HTTP 一定成功；"failed" 也
+  /// 不阻止会话继续（brain 可能只是暂时没开机）。
+  private func probeLocalNetwork(
+    _ args: [String: Any], result: @escaping FlutterResult
+  ) {
+    guard let host = args["host"] as? String, !host.isEmpty,
+      let portNumber = (args["port"] as? NSNumber)?.uint16Value,
+      let port = NWEndpoint.Port(rawValue: portNumber)
+    else {
+      result("badArgs")
+      return
+    }
+
+    let timeoutMs = (args["timeoutMs"] as? NSNumber)?.intValue ?? 5000
+    let connection = NWConnection(
+      host: NWEndpoint.Host(host), port: port, using: .tcp)
+
+    let lock = NSLock()
+    var finished = false
+    func finish(_ status: String) {
+      lock.lock()
+      if finished {
+        lock.unlock()
+        return
+      }
+      finished = true
+      lock.unlock()
+      connection.cancel()
+      DispatchQueue.main.async { result(status) }
+    }
+
+    connection.stateUpdateHandler = { state in
+      switch state {
+      case .ready:
+        finish("ready")
+      case .failed, .cancelled:
+        finish("failed")
+      default:
+        break
+      }
+    }
+    connection.start(queue: DispatchQueue.global(qos: .userInitiated))
+    DispatchQueue.global().asyncAfter(deadline: .now() + .milliseconds(timeoutMs)) {
+      finish("timeout")
+    }
+  }
+
+  private static func openLocalNetworkSettings() {
+    guard
+      let url = URL(
+        string:
+          "x-apple.systempreferences:com.apple.preference.security?Privacy_LocalNetwork"
+      )
+    else { return }
+    NSWorkspace.shared.open(url)
   }
 
   // ---------------------------------------------------------------- 权限

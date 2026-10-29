@@ -261,6 +261,19 @@ class _HomePageState extends State<HomePage> {
                 _toggles(context),
                 const SizedBox(height: 6),
                 _headline(context),
+                if (controller.brainError != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      controller.brainError!,
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                  ),
                 const SizedBox(height: 12),
                 Expanded(child: _messageStreamWithJump(context)),
               ],

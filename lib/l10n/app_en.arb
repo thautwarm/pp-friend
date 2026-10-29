@@ -172,5 +172,52 @@
   "orbStart": "Start conversation",
   "orbStarting": "Starting",
   "orbEnd": "End conversation",
-  "jumpToBottom": "Jump to latest"
+  "jumpToBottom": "Jump to latest",
+  "onboardingTitle": "Permissions",
+  "onboardingIntro": "Before the first conversation, turn on the items below. You can come back to this page from Settings anytime.",
+  "microphonePermission": "Microphone",
+  "microphonePermissionBody": "Without the microphone, the app cannot hear you.",
+  "permissionGranted": "Allowed",
+  "permissionDenied": "Denied",
+  "permissionRestricted": "Restricted by the system",
+  "permissionNotDetermined": "Not requested yet",
+  "permissionUnknown": "Unknown",
+  "requestPermission": "Request permission",
+  "openSystemSettings": "Open System Settings",
+  "localNetworkPermission": "Local network",
+  "localNetworkPermissionBody": "Since macOS 15, reaching a brain on your LAN requires separate permission. Other platforms do not have this.",
+  "localNetworkReady": "Allowed, the brain is reachable",
+  "localNetworkUnavailable": "Not allowed, or the brain is unreachable",
+  "localNetworkNotConfigured": "Set a brain address first",
+  "localNetworkUnsupported": "Not needed on this platform",
+  "checkNow": "Check",
+  "checking": "Checking…",
+  "setBrainAddress": "Set brain address",
+  "onboardingStart": "Start using it",
+  "permissionCheckEntry": "Permissions",
+  "permissionCheckEntrySubtitle": "Microphone, local network",
+  "permissionRequestFailed": "Request failed; enable it in System Settings",
+  "brainEndpointTitle": "Brain address",
+  "brainBaseUrlLabel": "Base URL",
+  "brainIdLabel": "brain_id",
+  "saveAndCheck": "Save and check",
+  "brainNotConfigured": "Fill in Base URL and brain_id first",
+  "notChecked": "Not checked yet",
+  "brainHttpOk": "HTTP reachable ({status})",
+  "@brainHttpOk": {
+    "placeholders": {
+      "status": {"type": "int"}
+    }
+  },
+  "brainHttpTimeout": "Connection timed out",
+  "brainHttpError": "Connection failed: {error}",
+  "@brainHttpError": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+  "invalidBrainUrl": "The address must start with http:// or https://",
+  "micSettingsPath": "System Settings → Privacy & Security → Microphone → enable pp_friend",
+  "localNetworkSettingsPath": "System Settings → Privacy & Security → Local Network → enable pp_friend",
+  "continueBlocked": "Allow the microphone, verify the brain address, and pass the local network check to continue"
 }

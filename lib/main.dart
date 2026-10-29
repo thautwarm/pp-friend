@@ -5,15 +5,27 @@ import 'l10n/app_localizations.dart';
 import 'src/conversation/conversation_controller.dart';
 import 'src/i18n/locale_controller.dart';
 import 'src/ui/home_page.dart';
+import 'src/ui/onboarding_page.dart';
 import 'src/voice/mic_permission.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const PpFriendApp());
+  // 首次启动先过一遍权限检查：麦克风和 macOS 的本地网络都不是"点了就会
+  // 自动有"的东西，让用户自己去找系统设置太难了。
+  var onboardingDone = false;
+  try {
+    onboardingDone = await onboardingCompleted();
+  } catch (_) {
+    // 读不到就当没做过，宁可多看一页也不要把人挡在权限问题外面。
+  }
+  runApp(PpFriendApp(showOnboarding: !onboardingDone));
 }
 
 class PpFriendApp extends StatefulWidget {
-  const PpFriendApp({super.key});
+  const PpFriendApp({super.key, this.showOnboarding = false});
+
+  /// 首次启动。完成引导后切到主界面。
+  final bool showOnboarding;
 
   @override
   State<PpFriendApp> createState() => _PpFriendAppState();
@@ -22,6 +34,7 @@ class PpFriendApp extends StatefulWidget {
 class _PpFriendAppState extends State<PpFriendApp> {
   late final ConversationController _controller;
   late final LocaleController _locale;
+  late bool _showOnboarding = widget.showOnboarding;
 
   static const _seed = Color(0xFF5B6ABF);
 
@@ -72,7 +85,13 @@ class _PpFriendAppState extends State<PpFriendApp> {
             brightness: Brightness.dark,
             useMaterial3: true,
           ),
-          home: HomePage(controller: _controller),
+          home: _showOnboarding
+              ? OnboardingPage(
+                  controller: _controller,
+                  firstRun: true,
+                  onDone: () => setState(() => _showOnboarding = false),
+                )
+              : HomePage(controller: _controller),
         ),
       ),
     );

@@ -100,6 +100,14 @@ class FakeVoiceEngine implements VoiceEngine {
   @override
   Future<bool> serviceRunning() async => false;
 
+  /// 联网前置检查收到的地址，按调用顺序。
+  final List<String> preparedNetworkUrls = <String>[];
+
+  @override
+  Future<void> prepareNetworkAccess(String baseUrl) async {
+    preparedNetworkUrls.add(baseUrl);
+  }
+
   @override
   Future<int> droppedMicFrames() async => 0;
 

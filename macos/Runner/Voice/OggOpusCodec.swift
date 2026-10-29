@@ -34,6 +34,7 @@ final class OggOpusDecoder {
   private var syncState = ogg_sync_state()
   private var streamState = ogg_stream_state()
   private var streamInited = false
+  private var serial: Int32 = 0
   private var decoder: OpaquePointer?
   private var channels = 1
   private var preSkip = 0
@@ -55,6 +56,7 @@ final class OggOpusDecoder {
     ogg_sync_clear(&syncState)
     syncState = ogg_sync_state()
     streamState = ogg_stream_state()
+    serial = 0
     channels = 1
     preSkip = 0
     skipped = 0
@@ -100,14 +102,37 @@ final class OggOpusDecoder {
     return DecodedPcm(pcm16le: output, sampleRate: 48_000, channels: channels)
   }
 
-  func finish() throws -> DecodedPcm? { nil }
+  func finish() throws -> DecodedPcm? {
+    // 这条回复结束：下一条回复可能复用同一个 serial，也可能换一个。
+    // 不清理的话，旧的 packet 序号/granule 会带进下一条流。
+    reset()
+    return nil
+  }
 
   private func processPage(_ page: inout ogg_page, output: inout Data) throws {
+    let pageSerial = Int32(ogg_page_serialno(&page))
+
+    // 每条回复是一条独立的逻辑流，serial 不同。以前的实现只在第一次
+    // init，第二条回复开始 pagein 就失败（"ogg_stream_pagein 失败"）。
+    if streamInited && pageSerial != serial {
+      ogg_stream_clear(&streamState)
+      streamInited = false
+      if let decoder {
+        opus_decoder_destroy(decoder)
+        self.decoder = nil
+      }
+      channels = 1
+      preSkip = 0
+      skipped = 0
+      packetIndex = 0
+      sawHeaders = false
+    }
+
     if !streamInited {
-      let serial = ogg_page_serialno(&page)
-      guard ogg_stream_init(&streamState, serial) == 0 else {
+      guard ogg_stream_init(&streamState, pageSerial) == 0 else {
         throw OggOpusError.ogg("ogg_stream_init 失败")
       }
+      serial = pageSerial
       streamInited = true
     }
     guard ogg_stream_pagein(&streamState, &page) == 0 else {
@@ -341,10 +366,16 @@ enum OggOpusEncoder {
     packetIn(head, granule: 0, bos: true, eos: false, number: 0)
     drainPages(flush: true)
 
-    // OpusTags：vendor 字符串 + 0 条 comment。
+    // OpusTags：vendor 长度 + vendor 字符串 + comment 条数。
+    // **comment 条数不能省** —— 少了这 4 个字节，包尾就是截断的，
+    // libopusfile 这类严格解析器会直接判定流损坏（服务端表现为 502）。
+    let vendor = Data("pp_friend".utf8)
     var tags = Data("OpusTags".utf8)
-    var vendorLen = UInt32(0).littleEndian
+    var vendorLen = UInt32(vendor.count).littleEndian
     withUnsafeBytes(of: &vendorLen) { tags.append(contentsOf: $0) }
+    tags.append(vendor)
+    var commentCount = UInt32(0).littleEndian
+    withUnsafeBytes(of: &commentCount) { tags.append(contentsOf: $0) }
     packetIn(tags, granule: 0, bos: false, eos: false, number: 1)
     drainPages(flush: true)
 
@@ -360,7 +391,10 @@ enum OggOpusEncoder {
         eos: i == packets.count - 1,
         number: Int64(i + 2)
       )
-      if i == packets.count - 1 {
+      // 第一包之后立刻刷一页，保证「第一个音频页不是最后一页」。
+      // libsndfile（服务端转写常用的解码器）对只有单个数据页的文件会报
+      // "First data page is also the last ... malformed"，短句直接被拒。
+      if i == 0 || i == packets.count - 1 {
         drainPages(flush: true)
       } else {
         drainPages(flush: false)

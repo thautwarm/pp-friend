@@ -442,7 +442,10 @@ class BrainClient {
   /// 所以只做"能读就读"的宽松解码，不假设格式。
   static String _snippet(Uint8List bytes) {
     if (bytes.isEmpty) return '(空)';
-    final text = String.fromCharCodes(bytes.take(160))
+    // 服务端错误体基本都是 UTF-8。按字节当码点（String.fromCharCodes）
+    // 会把中文显示成 `è½¬å...`，反而看不出真实错误。
+    final text = utf8
+        .decode(bytes.take(160).toList(), allowMalformed: true)
         .replaceAll(RegExp(r'[\x00-\x1f]'), '·');
     return bytes.length > 160 ? '$text…' : text;
   }

@@ -855,6 +855,11 @@ class ConversationController extends ChangeNotifier {
         '${brain.token.trim().isEmpty ? "（未启用鉴权）" : "（已带 token）"}',
       );
 
+      // macOS 15+ 的本地网络权限要由 App 自己发起连接才会弹框。
+      // 先探一次同一地址，别让后面的 HTTP 请求撞上静默拒绝。
+      // 其他平台是 no-op。
+      await _engine.prepareNetworkAccess(brain.baseUrl);
+
       // 顺序有讲究：前台服务必须在 App 前台时启动；音频配置要在
       // startAudio 之前应用，因为它决定采集源和播放属性。
       await _engine.startService();
