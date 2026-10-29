@@ -99,10 +99,16 @@ jobs:
 
   macos:
     name: Analyze, test and build macOS app
-    # 公开仓库上的 macos-14 是 Apple Silicon；本项目的原生依赖只出 arm64。
-    runs-on: macos-14
+    # 公开仓库上的 macos-15 是 Apple Silicon；本项目的原生依赖只出 arm64。
+    # 不用 macos-14：它自带的 Xcode 最高 16.2（Swift 6.0），而
+    # shared_preferences_foundation 2.6.x 生成的 Swift 需要 6.1 的
+    # 尾随逗号语法，会在编译期报 "unexpected ',' separator"。
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: xcodebuild -version
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
