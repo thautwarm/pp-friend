@@ -285,27 +285,32 @@ final class MacVoiceEngine {
     }
 
     let generation = timeline.schedule(frames)
-    if !player.isPlaying {
-      player.play()
-      headBaseline = nil
-    }
+    // **先排 buffer，再 play。** 反过来会在队列为空时先启动节点，
+    // 个别设备上第一块会晚半拍。
     player.scheduleBuffer(
       buffer, at: nil, options: [], completionCallbackType: .dataPlayedBack
     ) { [weak self] _ in
       DispatchQueue.main.async {
         guard let self else { return }
         self.timeline.played(frames, generation: generation)
-        if self.timeline.backlogFrames == 0 {
-          self.player.stop()
-          self.headBaseline = nil
-        }
+        // 不要在 completion handler 里 stop 播放器：Apple 明确说这可能在
+        // 渲染队列上死锁，而且 flush 之后过期的回调可能误停新的一条。
+        // 队列空了就让它空转，下一块落下来会继续播。
       }
+    }
+    if !player.isPlaying {
+      player.play()
+      headBaseline = nil
     }
   }
 
   func flushPlayback(newEpoch: Int64) -> Int {
     let discarded = timeline.flush(newEpoch: newEpoch)
+    // stop() 丢掉还没播的 buffer；reset() 再清节点内部状态。VPIO 下
+    // 只 stop 有时仍会把已经交给渲染线程的那一块放完，听起来就是
+    // “打断了还在响”。
     player.stop()
+    player.reset()
     headBaseline = nil
     return discarded
   }
