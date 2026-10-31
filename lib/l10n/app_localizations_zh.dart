@@ -676,4 +676,10 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get continueBlocked => '麦克风、brain 地址和本地网络都通过之后才能继续';
+
+  @override
+  String get skipCurrentSpeech => '跳过';
+
+  @override
+  String get skipCurrentSpeechTooltip => '跳过正在播放的这句话';
 }

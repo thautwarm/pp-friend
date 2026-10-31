@@ -706,4 +706,10 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get continueBlocked =>
       'Allow the microphone, verify the brain address, and pass the local network check to continue';
+
+  @override
+  String get skipCurrentSpeech => 'Skip';
+
+  @override
+  String get skipCurrentSpeechTooltip => 'Skip the line currently playing';
 }

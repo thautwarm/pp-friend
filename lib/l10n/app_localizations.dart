@@ -1353,6 +1353,18 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'麦克风、brain 地址和本地网络都通过之后才能继续'**
   String get continueBlocked;
+
+  /// No description provided for @skipCurrentSpeech.
+  ///
+  /// In zh, this message translates to:
+  /// **'跳过'**
+  String get skipCurrentSpeech;
+
+  /// No description provided for @skipCurrentSpeechTooltip.
+  ///
+  /// In zh, this message translates to:
+  /// **'跳过正在播放的这句话'**
+  String get skipCurrentSpeechTooltip;
 }
 
 class _AppLocalizationsDelegate

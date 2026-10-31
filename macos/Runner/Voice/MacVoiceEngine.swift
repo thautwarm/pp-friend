@@ -53,6 +53,30 @@ final class MacVoiceEngine {
   private var lastPlaybackLevelAt: CFTimeInterval = 0
   private var lastPermissionCheckAt: CFTimeInterval = 0
   private var restartScheduled = false
+
+  /// 下一次 push 必须显式 play 一次。
+  ///
+  /// stop()/reset() 之后 isPlaying 不一定可靠；引擎被系统停掉再重启时
+  /// 更明显。不强制 play 的话 buffer 会静静躺在队列里，等下一次 play
+  /// 才一起放出来 —— 听起来就是“刚才的 AI 语音半天没响，后来突然补播”。
+  private var needsPlayerPlay = true
+
+  /// 会话期间阻止 App Nap，不然长时间空闲后定时器和音频都可能被系统节流。
+  private var micActivity: NSObjectProtocol?
+
+  /// 防睡眠锁：说话/放音时续期，安静满 60 秒就释放，允许系统睡眠。
+  /// 和 App Nap 是两件事：这个带 idleSystemSleepDisabled，只防“整机睡”。
+  private var sleepGuard: NSObjectProtocol?
+  private var sleepGuardTimer: Timer?
+  private var lastSleepGuardRefreshAt: CFTimeInterval = 0
+  private static let sleepGuardWindow: TimeInterval = 60
+  private static let sleepGuardThrottle: TimeInterval = 1.0
+
+  /// 最近一次收到采集 buffer 的时刻（watchdog 用，和音量无关）。
+  private var lastMicBufferAt: CFTimeInterval = 0
+  private var micStallRestarts = 0
+  private var lastMicWatchdogAt: CFTimeInterval = 0
+
   private var pendingMicFrames = 0
   private var droppedMicFrameCount = 0
   private var headBaseline: AVAudioFramePosition?
@@ -146,7 +170,13 @@ final class MacVoiceEngine {
     running = true
     timeline = PlaybackTimeline()
     headBaseline = nil
+    needsPlayerPlay = true
+    micStallRestarts = 0
+    lastMicBufferAt = CACurrentMediaTime()
     lastPermissionCheckAt = CACurrentMediaTime()
+    micActivity = ProcessInfo.processInfo.beginActivity(
+      options: .userInitiated, reason: "PP Friend voice session")
+    refreshSleepGuard()
     startLevelsTimer()
     installConfigObserver()
     return currentFormatMap()
@@ -162,6 +192,12 @@ final class MacVoiceEngine {
   private func stopAudioInternal() {
     running = false
     restartScheduled = false
+    needsPlayerPlay = true
+    if let activity = micActivity {
+      ProcessInfo.processInfo.endActivity(activity)
+      micActivity = nil
+    }
+    releaseSleepGuard()
     levelsTimer?.invalidate()
     levelsTimer = nil
 
@@ -225,7 +261,15 @@ final class MacVoiceEngine {
     let db = rmsDb(samples, count: count)
     stateLock.lock()
     micDb = db
+    lastMicBufferAt = CACurrentMediaTime()
     stateLock.unlock()
+
+    // 说话才续防睡眠锁；安静时让它 60 秒后自然过期。
+    if db > -45 {
+      DispatchQueue.main.async { [weak self] in
+        self?.refreshSleepGuard()
+      }
+    }
 
     let pcm = floatToInt16LE(samples, count: count)
     stateLock.lock()
@@ -285,27 +329,51 @@ final class MacVoiceEngine {
     }
 
     let generation = timeline.schedule(frames)
-    if !player.isPlaying {
-      player.play()
-      headBaseline = nil
-    }
+    // **先排 buffer，再 play。** 反过来会在队列为空时先启动节点，
+    // 个别设备上第一块会晚半拍。
     player.scheduleBuffer(
       buffer, at: nil, options: [], completionCallbackType: .dataPlayedBack
     ) { [weak self] _ in
       DispatchQueue.main.async {
         guard let self else { return }
         self.timeline.played(frames, generation: generation)
-        if self.timeline.backlogFrames == 0 {
-          self.player.stop()
-          self.headBaseline = nil
-        }
+        // 不要在 completion handler 里 stop 播放器：Apple 明确说这可能在
+        // 渲染队列上死锁，而且 flush 之后过期的回调可能误停新的一条。
+        // 队列空了就让它空转，下一块落下来会继续播。
       }
+    }
+    ensurePlayerStarted()
+  }
+
+  /// 保证引擎在跑、播放器真的在 play。
+  private func ensurePlayerStarted() {
+    if !audio.isRunning {
+      do {
+        try audio.start()
+      } catch {
+        emit([
+          "type": "engineFailure",
+          "reason": "音频引擎意外停止后重启失败：\(error.localizedDescription)",
+        ])
+        return
+      }
+      needsPlayerPlay = true
+    }
+    if needsPlayerPlay || !player.isPlaying {
+      player.play()
+      needsPlayerPlay = false
+      headBaseline = nil
     }
   }
 
   func flushPlayback(newEpoch: Int64) -> Int {
     let discarded = timeline.flush(newEpoch: newEpoch)
+    // stop() 丢掉还没播的 buffer；reset() 再清节点内部状态。VPIO 下
+    // 只 stop 有时仍会把已经交给渲染线程的那一块放完，听起来就是
+    // “打断了还在响”。
     player.stop()
+    player.reset()
+    needsPlayerPlay = true
     headBaseline = nil
     return discarded
   }
@@ -323,6 +391,38 @@ final class MacVoiceEngine {
     return Int(Double(played) * 1000.0 / sampleRate)
   }
 
+  // ---------------------------------------------------------------- 防睡眠
+
+  /// 说话/放音时续期；安静满 60 秒自动释放，让系统按正常策略睡眠。
+  private func refreshSleepGuard() {
+    let now = CACurrentMediaTime()
+    if sleepGuard != nil && now - lastSleepGuardRefreshAt < Self.sleepGuardThrottle {
+      return
+    }
+    lastSleepGuardRefreshAt = now
+    if sleepGuard == nil {
+      sleepGuard = ProcessInfo.processInfo.beginActivity(
+        options: [.userInitiated, .idleSystemSleepDisabled],
+        reason: "PP Friend conversation")
+    }
+    sleepGuardTimer?.invalidate()
+    sleepGuardTimer = Timer.scheduledTimer(
+      withTimeInterval: Self.sleepGuardWindow, repeats: false
+    ) { [weak self] _ in
+      self?.releaseSleepGuard()
+    }
+  }
+
+  private func releaseSleepGuard() {
+    sleepGuardTimer?.invalidate()
+    sleepGuardTimer = nil
+    if let token = sleepGuard {
+      ProcessInfo.processInfo.endActivity(token)
+      sleepGuard = nil
+    }
+    lastSleepGuardRefreshAt = 0
+  }
+
   // ---------------------------------------------------------------- 电平
 
   private func handlePlaybackLevel(_ buffer: AVAudioPCMBuffer) {
@@ -332,6 +432,13 @@ final class MacVoiceEngine {
     playbackDb = db
     lastPlaybackLevelAt = CACurrentMediaTime()
     stateLock.unlock()
+
+    // AI 在出声也算“在用”，同样续一下防睡眠锁。
+    if db > -45 {
+      DispatchQueue.main.async { [weak self] in
+        self?.refreshSleepGuard()
+      }
+    }
   }
 
   private func startLevelsTimer() {
@@ -351,6 +458,35 @@ final class MacVoiceEngine {
             "reason": "系统麦克风权限已被撤销",
           ])
           self.stopAudioInternal()
+          return
+        }
+      }
+
+      // 长时间空闲后系统可能悄悄停掉音频图：引擎还标着 running，tap 却
+      // 不再送 buffer。用「有没有采集数据」判断，和音量无关，所以真安静
+      // 时不会误判。重启几次还不行就按 micSilentlyDead 停掉会话。
+      if now - self.lastMicWatchdogAt > 1.0 {
+        self.lastMicWatchdogAt = now
+        self.stateLock.lock()
+        let lastMic = self.lastMicBufferAt
+        self.stateLock.unlock()
+        if self.running && !self.restartScheduled && lastMic > 0
+          && now - lastMic > 2.0
+        {
+          if self.micStallRestarts < 3 {
+            self.micStallRestarts += 1
+            self.emit([
+              "type": "engineFailure",
+              "reason": "麦克风 2 秒没有数据，重建音频图（第 \(self.micStallRestarts) 次）",
+            ])
+            _ = self.rebuildAudioGraph()
+          } else {
+            self.emit([
+              "type": "micSilentlyDead",
+              "reason": "麦克风长时间没有数据，重建音频图无效",
+            ])
+            self.stopAudioInternal()
+          }
           return
         }
       }
@@ -402,29 +538,70 @@ final class MacVoiceEngine {
       guard let self else { return }
       self.restartScheduled = false
       guard self.running else { return }
-      do {
-        self.audio.stop()
-        self.audio.prepare()
-        try self.audio.start()
+      if self.rebuildAudioGraph() {
         self.emit([
           "type": "interruptionEnded",
           "shouldResume": true,
         ])
-      } catch {
-        let format = self.audio.inputNode.outputFormat(forBus: 0)
-        if format.sampleRate <= 0 || format.channelCount == 0 {
-          // 输入设备被拔掉/没有了：采集不会再有数据，停掉比假装活着好。
-          self.emit([
-            "type": "micSilentlyDead",
-            "reason": "没有可用的麦克风输入：\(error.localizedDescription)",
-          ])
-        } else {
-          self.emit([
-            "type": "engineFailure",
-            "reason": "音频设备变化后重启失败：\(error.localizedDescription)",
-          ])
-        }
       }
+    }
+  }
+
+  /// 停掉引擎、重新读输入格式、重装 tap、再启动。
+  ///
+  /// 只 `stop/prepare/start` 不重装 tap 是不够的：长时间空闲或设备变化后，
+  /// 引擎可能还标着 running，但输入 tap 已经不再送 buffer，表现就是
+  /// “麦一直开着，但说什么它都不理”。这里把采集链路整体重建。
+  @discardableResult
+  private func rebuildAudioGraph() -> Bool {
+    guard running else { return false }
+    audio.stop()
+    if inputTapInstalled {
+      audio.inputNode.removeTap(onBus: 0)
+      inputTapInstalled = false
+    }
+
+    do {
+      try? audio.inputNode.setVoiceProcessingEnabled(true)
+      let format = audio.inputNode.outputFormat(forBus: 0)
+      guard format.sampleRate > 0, format.channelCount > 0 else {
+        throw NSError(
+          domain: "pp_friend", code: 1,
+          userInfo: [NSLocalizedDescriptionKey: "没有可用的麦克风输入格式"])
+      }
+      // Dart 侧还在按旧采样率解释 mic 帧；输入速率变了就停掉，让用户重开。
+      if Int(format.sampleRate) != Int(sampleRate) {
+        emit([
+          "type": "micSilentlyDead",
+          "reason": "输入采样率从 \(Int(sampleRate)) 变为 \(Int(format.sampleRate))，请重新开始会话",
+        ])
+        stopAudioInternal()
+        return false
+      }
+
+      framer = MicFramer(frameBytes: framesPerChunk * 2)
+      audio.inputNode.installTap(
+        onBus: 0,
+        bufferSize: AVAudioFrameCount(framesPerChunk),
+        format: format
+      ) { [weak self] buffer, _ in
+        self?.handleInput(buffer)
+      }
+      inputTapInstalled = true
+
+      audio.prepare()
+      try audio.start()
+      needsPlayerPlay = true
+      ensurePlayerStarted()
+      lastMicBufferAt = CACurrentMediaTime()
+      micStallRestarts = 0
+      return true
+    } catch {
+      emit([
+        "type": "engineFailure",
+        "reason": "音频图重建失败：\(error.localizedDescription)",
+      ])
+      return false
     }
   }
 

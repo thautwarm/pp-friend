@@ -219,5 +219,7 @@
   "invalidBrainUrl": "The address must start with http:// or https://",
   "micSettingsPath": "System Settings → Privacy & Security → Microphone → enable pp_friend",
   "localNetworkSettingsPath": "System Settings → Privacy & Security → Local Network → enable pp_friend",
-  "continueBlocked": "Allow the microphone, verify the brain address, and pass the local network check to continue"
+  "continueBlocked": "Allow the microphone, verify the brain address, and pass the local network check to continue",
+  "skipCurrentSpeech": "Skip",
+  "skipCurrentSpeechTooltip": "Skip the line currently playing"
 }

@@ -202,13 +202,14 @@ jobs:
 
   release:
     name: Publish GitHub Release
-    needs: build
+    # 等两个构建都过：Release 里要同时有 APK 和 macOS app。
+    needs: [build, macos]
     if: >-
       startsWith(github.ref, 'refs/tags/v') ||
       (github.event_name == 'workflow_dispatch' && inputs.release_tag != '')
     runs-on: ubuntu-latest
     steps:
-      - name: Download APK
+      - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
           pattern: pp-friend-*
@@ -220,6 +221,8 @@ jobs:
         with:
           tag_name: ${{ inputs.release_tag || github.ref_name }}
           name: ${{ inputs.release_tag || github.ref_name }}
-          files: dist/*.apk
+          files: |
+            dist/*.apk
+            dist/*.zip
           generate_release_notes: true
           make_latest: true

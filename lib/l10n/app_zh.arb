@@ -284,5 +284,7 @@
   "invalidBrainUrl": "地址要以 http:// 或 https:// 开头",
   "micSettingsPath": "系统设置 → 隐私与安全性 → 麦克风 → 打开 pp_friend",
   "localNetworkSettingsPath": "系统设置 → 隐私与安全性 → 本地网络 → 打开 pp_friend",
-  "continueBlocked": "麦克风、brain 地址和本地网络都通过之后才能继续"
+  "continueBlocked": "麦克风、brain 地址和本地网络都通过之后才能继续",
+  "skipCurrentSpeech": "跳过",
+  "skipCurrentSpeechTooltip": "跳过正在播放的这句话"
 }
