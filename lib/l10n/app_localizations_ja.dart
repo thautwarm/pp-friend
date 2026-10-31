@@ -683,4 +683,10 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get continueBlocked => 'マイク、brain アドレス、ローカルネットワークの確認がすべて通ると続行できます';
+
+  @override
+  String get skipCurrentSpeech => 'スキップ';
+
+  @override
+  String get skipCurrentSpeechTooltip => '再生中のこの文をスキップ';
 }

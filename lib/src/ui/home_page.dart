@@ -542,8 +542,10 @@ class _HomePageState extends State<HomePage> {
     // 否则开始/结束的一瞬间按钮会跳一下。
     final enabled = controller.active && !controller.busy;
 
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
+    return Wrap(
+      alignment: WrapAlignment.center,
+      spacing: 10,
+      runSpacing: 6,
       children: [
         _toggleChip(
           icon: controller.micMuted ? Icons.mic_off_rounded : Icons.mic_rounded,
@@ -552,7 +554,6 @@ class _HomePageState extends State<HomePage> {
           enabled: enabled,
           onTap: controller.toggleMicMuted,
         ),
-        const SizedBox(width: 10),
         _toggleChip(
           icon: Icons.front_hand_rounded,
           label: l10n.bargeIn,
@@ -563,7 +564,31 @@ class _HomePageState extends State<HomePage> {
             controller.config.copyWith(bargeIn: !controller.bargeIn),
           ),
         ),
+        Tooltip(
+          message: l10n.skipCurrentSpeechTooltip,
+          child: _actionChip(
+            icon: Icons.skip_next_rounded,
+            label: l10n.skipCurrentSpeech,
+            // 没有声音在放/排队时按了也没用，灰掉。macOS 没有音量减键，
+            // 手机上多一个随时可点的入口也不冲突。
+            enabled: enabled && controller.speaking,
+            onTap: () => controller.clearPlayback(),
+          ),
+        ),
       ],
+    );
+  }
+
+  Widget _actionChip({
+    required IconData icon,
+    required String label,
+    required bool enabled,
+    required VoidCallback onTap,
+  }) {
+    return ActionChip(
+      avatar: Icon(icon, size: 16),
+      label: Text(label),
+      onPressed: enabled ? onTap : null,
     );
   }
 

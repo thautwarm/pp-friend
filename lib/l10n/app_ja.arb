@@ -284,5 +284,7 @@
   "invalidBrainUrl": "アドレスは http:// または https:// で始めてください",
   "micSettingsPath": "システム設定 → プライバシーとセキュリティ → マイク → pp_friend を有効にする",
   "localNetworkSettingsPath": "システム設定 → プライバシーとセキュリティ → ローカルネットワーク → pp_friend を有効にする",
-  "continueBlocked": "マイク、brain アドレス、ローカルネットワークの確認がすべて通ると続行できます"
+  "continueBlocked": "マイク、brain アドレス、ローカルネットワークの確認がすべて通ると続行できます",
+  "skipCurrentSpeech": "スキップ",
+  "skipCurrentSpeechTooltip": "再生中のこの文をスキップ"
 }
